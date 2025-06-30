@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -43,6 +44,14 @@ func NewTradingClient() (*TradingClient, error) {
 		BinanceClient: binanceClient,
 		UseTestnet:    useTestnet,
 	}, nil
+}
+
+// Client is an alias for TradingClient for backward compatibility
+type Client = TradingClient
+
+// NewClient creates a new trading client (alias for NewTradingClient)
+func NewClient(config interface{}) (*Client, error) {
+	return NewTradingClient()
 }
 
 // AccountBalance represents account balance information
@@ -353,4 +362,459 @@ func (tc *TradingClient) DisplayUSDTPairs(ctx context.Context, showAll bool) err
 	}
 
 	return nil
+}
+
+// OrderRequest represents a trading order request
+type OrderRequest struct {
+	Symbol        string
+	Side          string // BUY or SELL
+	Type          string // MARKET, LIMIT, STOP_MARKET, TAKE_PROFIT_MARKET
+	Quantity      string
+	Price         string
+	StopPrice     string
+	ReduceOnly    bool
+	ClosePosition bool
+}
+
+// OrderResponse represents a trading order response
+type OrderResponse struct {
+	OrderID     string
+	Symbol      string
+	Status      string
+	ExecutedQty float64
+	AvgPrice    float64
+}
+
+// GetLeverage gets current leverage for a symbol
+func (tc *TradingClient) GetLeverage(symbol string) (int, error) {
+	ctx := context.Background()
+
+	// Get position information
+	positions, err := tc.BinanceClient.NewGetPositionRiskService().Do(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get position info: %w", err)
+	}
+
+	for _, pos := range positions {
+		if pos.Symbol == symbol {
+			leverage, err := strconv.Atoi(pos.Leverage)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse leverage: %w", err)
+			}
+			return leverage, nil
+		}
+	}
+
+	return 0, fmt.Errorf("symbol %s not found", symbol)
+}
+
+// ChangeLeverage changes leverage for a symbol
+func (tc *TradingClient) ChangeLeverage(symbol string, leverage int) error {
+	ctx := context.Background()
+
+	_, err := tc.BinanceClient.NewChangeLeverageService().
+		Symbol(symbol).
+		Leverage(leverage).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to change leverage: %w", err)
+	}
+
+	return nil
+}
+
+// GetMarginMode gets current margin mode for a symbol
+func (tc *TradingClient) GetMarginMode(symbol string) (string, error) {
+	ctx := context.Background()
+
+	// Get position information
+	positions, err := tc.BinanceClient.NewGetPositionRiskService().Do(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get position info: %w", err)
+	}
+
+	for _, pos := range positions {
+		if pos.Symbol == symbol {
+			if pos.MaxNotionalValue != "" {
+				return "CROSSED", nil
+			}
+			return "ISOLATED", nil
+		}
+	}
+
+	return "", fmt.Errorf("symbol %s not found", symbol)
+}
+
+// ChangeMarginMode changes margin mode for a symbol
+func (tc *TradingClient) ChangeMarginMode(symbol string, marginMode string) error {
+	ctx := context.Background()
+
+	mode := futures.MarginTypeIsolated
+	if marginMode == "CROSSED" {
+		mode = futures.MarginTypeCrossed
+	}
+
+	err := tc.BinanceClient.NewChangeMarginTypeService().
+		Symbol(symbol).
+		MarginType(mode).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to change margin mode: %w", err)
+	}
+
+	return nil
+}
+
+// CreateOrder creates a new trading order
+func (tc *TradingClient) CreateOrder(order *OrderRequest) (*OrderResponse, error) {
+	ctx := context.Background()
+
+	service := tc.BinanceClient.NewCreateOrderService().
+		Symbol(order.Symbol).
+		Side(futures.SideType(order.Side)).
+		Type(futures.OrderType(order.Type))
+
+	// Set quantity if provided
+	if order.Quantity != "" {
+		service = service.Quantity(order.Quantity)
+	}
+
+	// Set price for limit orders
+	if order.Price != "" {
+		service = service.Price(order.Price)
+	}
+
+	// Set stop price for stop orders
+	if order.StopPrice != "" {
+		service = service.StopPrice(order.StopPrice)
+	}
+
+	// Set reduce only flag
+	if order.ReduceOnly {
+		service = service.ReduceOnly(true)
+	}
+
+	// Set close position flag
+	if order.ClosePosition {
+		service = service.ClosePosition(true)
+	}
+
+	result, err := service.Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	return &OrderResponse{
+		OrderID: fmt.Sprintf("%d", result.OrderID),
+		Symbol:  result.Symbol,
+		Status:  string(result.Status),
+	}, nil
+}
+
+// AccountInfo represents account information
+type AccountInfo struct {
+	Assets []AccountAsset
+}
+
+// AccountAsset represents an account asset
+type AccountAsset struct {
+	Asset         string
+	WalletBalance string
+	MarginBalance string
+}
+
+// GetAccountInfoSimple gets account information including balances (simplified version)
+func (tc *TradingClient) GetAccountInfoSimple() (*AccountInfo, error) {
+	ctx := context.Background()
+
+	account, err := tc.BinanceClient.NewGetAccountService().Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+
+	var assets []AccountAsset
+	for _, asset := range account.Assets {
+		assets = append(assets, AccountAsset{
+			Asset:         asset.Asset,
+			WalletBalance: asset.WalletBalance,
+			MarginBalance: asset.MarginBalance,
+		})
+	}
+
+	return &AccountInfo{
+		Assets: assets,
+	}, nil
+}
+
+// GetTicker gets current price ticker for a symbol
+func (tc *TradingClient) GetTicker(symbol string) (*TickerPrice, error) {
+	ctx := context.Background()
+
+	ticker, err := tc.BinanceClient.NewListPriceChangeStatsService().
+		Symbol(symbol).
+		Do(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ticker: %w", err)
+	}
+
+	if len(ticker) == 0 {
+		return nil, fmt.Errorf("no ticker data for symbol %s", symbol)
+	}
+
+	return &TickerPrice{
+		Symbol: ticker[0].Symbol,
+		Price:  ticker[0].LastPrice,
+	}, nil
+}
+
+// TickerPrice represents ticker price information
+type TickerPrice struct {
+	Symbol string
+	Price  string
+}
+
+// GetUSDTSymbols gets all USDT trading symbols
+func (tc *TradingClient) GetUSDTSymbols() ([]string, error) {
+	ctx := context.Background()
+
+	exchangeInfo, err := tc.BinanceClient.NewExchangeInfoService().Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get exchange info: %w", err)
+	}
+
+	var symbols []string
+	for _, symbol := range exchangeInfo.Symbols {
+		if symbol.QuoteAsset == "USDT" && symbol.Status == "TRADING" {
+			symbols = append(symbols, symbol.Symbol)
+		}
+	}
+
+	return symbols, nil
+}
+
+// GetKlines gets kline/candlestick data for a symbol
+func (tc *TradingClient) GetKlines(symbol string, interval string, limit int) ([][]interface{}, error) {
+	ctx := context.Background()
+
+	klines, err := tc.BinanceClient.NewKlinesService().
+		Symbol(symbol).
+		Interval(interval).
+		Limit(limit).
+		Do(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get klines: %w", err)
+	}
+
+	// Convert to interface{} slice for compatibility
+	var result [][]interface{}
+	for _, kline := range klines {
+		row := []interface{}{
+			kline.OpenTime,
+			kline.Open,
+			kline.High,
+			kline.Low,
+			kline.Close,
+			kline.Volume,
+			kline.CloseTime,
+		}
+		result = append(result, row)
+	}
+
+	return result, nil
+}
+
+// PlaceOrder places a market order
+func (tc *TradingClient) PlaceOrder(ctx context.Context, symbol, side, orderType string, quantity, price float64) (*OrderResponse, error) {
+	// Get symbol info to determine proper precision
+	quantityStr, err := tc.formatQuantity(ctx, symbol, quantity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format quantity: %w", err)
+	}
+
+	service := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(futures.SideType(side)).
+		Type(futures.OrderType(orderType)).
+		Quantity(quantityStr)
+
+	// Add price for limit orders
+	if orderType == "LIMIT" && price > 0 {
+		priceStr, err := tc.formatPrice(ctx, symbol, price)
+		if err != nil {
+			return nil, fmt.Errorf("failed to format price: %w", err)
+		}
+		service = service.Price(priceStr)
+	}
+
+	result, err := service.Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to place order: %w", err)
+	}
+
+	return &OrderResponse{
+		OrderID:     fmt.Sprintf("%d", result.OrderID),
+		Status:      string(result.Status),
+		ExecutedQty: parseFloat(result.ExecutedQuantity),
+		AvgPrice:    parseFloat(result.AvgPrice),
+	}, nil
+}
+
+// PlaceStopOrder places a stop loss order
+func (tc *TradingClient) PlaceStopOrder(ctx context.Context, symbol, side string, quantity, stopPrice float64) (*OrderResponse, error) {
+	quantityStr, err := tc.formatQuantity(ctx, symbol, quantity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format quantity: %w", err)
+	}
+
+	stopPriceStr, err := tc.formatPrice(ctx, symbol, stopPrice)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format stop price: %w", err)
+	}
+
+	service := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(futures.SideType(side)).
+		Type(futures.OrderTypeStopMarket).
+		Quantity(quantityStr).
+		StopPrice(stopPriceStr).
+		ReduceOnly(true)
+
+	result, err := service.Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to place stop order: %w", err)
+	}
+
+	return &OrderResponse{
+		OrderID:     fmt.Sprintf("%d", result.OrderID),
+		Status:      string(result.Status),
+		ExecutedQty: parseFloat(result.ExecutedQuantity),
+		AvgPrice:    parseFloat(result.AvgPrice),
+	}, nil
+}
+
+// PlaceTakeProfitOrder places a take profit order
+func (tc *TradingClient) PlaceTakeProfitOrder(ctx context.Context, symbol, side string, quantity, takeProfitPrice float64) (*OrderResponse, error) {
+	quantityStr, err := tc.formatQuantity(ctx, symbol, quantity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format quantity: %w", err)
+	}
+
+	takeProfitPriceStr, err := tc.formatPrice(ctx, symbol, takeProfitPrice)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format take profit price: %w", err)
+	}
+
+	service := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(futures.SideType(side)).
+		Type(futures.OrderTypeTakeProfitMarket).
+		Quantity(quantityStr).
+		StopPrice(takeProfitPriceStr).
+		ReduceOnly(true)
+
+	result, err := service.Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to place take profit order: %w", err)
+	}
+
+	return &OrderResponse{
+		OrderID:     fmt.Sprintf("%d", result.OrderID),
+		Status:      string(result.Status),
+		ExecutedQty: parseFloat(result.ExecutedQuantity),
+		AvgPrice:    parseFloat(result.AvgPrice),
+	}, nil
+}
+
+// SetLeverage sets leverage for a symbol
+func (tc *TradingClient) SetLeverage(symbol string, leverage int) error {
+	ctx := context.Background()
+
+	_, err := tc.BinanceClient.NewChangeLeverageService().
+		Symbol(symbol).
+		Leverage(leverage).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to set leverage: %w", err)
+	}
+
+	return nil
+}
+
+// formatQuantity formats quantity according to symbol's step size
+func (tc *TradingClient) formatQuantity(ctx context.Context, symbol string, quantity float64) (string, error) {
+	pairs, err := tc.GetUSDTPairs(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get symbol info: %w", err)
+	}
+
+	for _, pair := range pairs {
+		if pair.Symbol == symbol {
+			// Use quantity precision to format
+			precision := pair.QuantityPrecision
+			if precision < 0 {
+				precision = 3 // default precision
+			}
+
+			// Ensure quantity respects step size and min quantity
+			if pair.StepSize > 0 {
+				quantity = math.Floor(quantity/pair.StepSize) * pair.StepSize
+			}
+
+			if quantity < pair.MinQty {
+				return "", fmt.Errorf("quantity %.8f is below minimum %.8f for %s", quantity, pair.MinQty, symbol)
+			}
+
+			format := fmt.Sprintf("%%.%df", precision)
+			return fmt.Sprintf(format, quantity), nil
+		}
+	}
+
+	// Fallback: use 3 decimal places
+	return fmt.Sprintf("%.3f", quantity), nil
+}
+
+// formatPrice formats price according to symbol's tick size
+func (tc *TradingClient) formatPrice(ctx context.Context, symbol string, price float64) (string, error) {
+	pairs, err := tc.GetUSDTPairs(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get symbol info: %w", err)
+	}
+
+	for _, pair := range pairs {
+		if pair.Symbol == symbol {
+			// Use price precision to format
+			precision := pair.PricePrecision
+			if precision < 0 {
+				precision = 4 // default precision
+			}
+
+			// Ensure price respects tick size
+			if pair.TickSize > 0 {
+				price = math.Round(price/pair.TickSize) * pair.TickSize
+			}
+
+			format := fmt.Sprintf("%%.%df", precision)
+			return fmt.Sprintf(format, price), nil
+		}
+	}
+
+	// Fallback: use 4 decimal places
+	return fmt.Sprintf("%.4f", price), nil
+}
+
+// parseFloat safely converts string to float64
+func parseFloat(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return f
 }

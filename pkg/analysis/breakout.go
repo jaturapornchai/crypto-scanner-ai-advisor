@@ -639,3 +639,84 @@ func (ta *TechnicalAnalyzer) FormatSignals(signals []*BreakoutSignal) string {
 
 	return result
 }
+
+// BreakoutData represents breakout analysis result for AI
+type BreakoutData struct {
+	HasBreakout bool   `json:"has_breakout"`
+	Direction   string `json:"direction"` // "UP" or "DOWN" or "NEUTRAL"
+	Confidence  float64 `json:"confidence"`
+}
+
+// CandleData represents candlestick data compatible with AI analysis
+type CandleData struct {
+	Timestamp int64   `json:"timestamp"`
+	Open      float64 `json:"open"`
+	High      float64 `json:"high"`
+	Low       float64 `json:"low"`
+	Close     float64 `json:"close"`
+	Volume    float64 `json:"volume"`
+}
+
+// DetectBreakouts analyzes candlestick data for breakout patterns (utility function)
+func DetectBreakouts(symbol string, candles []CandleData, period int, deviation float64) *BreakoutData {
+	if len(candles) < period {
+		return &BreakoutData{
+			HasBreakout: false,
+			Direction:   "NEUTRAL",
+			Confidence:  0.0,
+		}
+	}
+
+	// Convert CandleData to Kline format
+	klines := make([]*Kline, len(candles))
+	for i, candle := range candles {
+		klines[i] = &Kline{
+			OpenTime:  candle.Timestamp,
+			Open:      candle.Open,
+			High:      candle.High,
+			Low:       candle.Low,
+			Close:     candle.Close,
+			Volume:    candle.Volume,
+			CloseTime: candle.Timestamp + 3600000, // Add 1 hour in milliseconds
+			IsGreen:   candle.Close > candle.Open,
+			IsRed:     candle.Close < candle.Open,
+		}
+	}
+
+	// Create analyzer and detect breakouts
+	analyzer := NewTechnicalAnalyzer()
+	signals := analyzer.DetectBreakouts(klines, symbol)
+
+	// Analyze the most recent signals
+	if len(signals) == 0 {
+		return &BreakoutData{
+			HasBreakout: false,
+			Direction:   "NEUTRAL",
+			Confidence:  0.0,
+		}
+	}
+
+	// Get the most recent signal
+	latestSignal := signals[len(signals)-1]
+	
+	var direction string
+	hasBreakout := false
+
+	switch latestSignal.Type {
+	case "UP_BREAKOUT", "RETEST_SUCCESS":
+		direction = "UP"
+		hasBreakout = true
+	case "DOWN_BREAKOUT", "RETEST_FAILED":
+		direction = "DOWN"
+		hasBreakout = true
+	default:
+		direction = "NEUTRAL"
+		hasBreakout = false
+	}
+
+	return &BreakoutData{
+		HasBreakout: hasBreakout,
+		Direction:   direction,
+		Confidence:  latestSignal.Confidence,
+	}
+}

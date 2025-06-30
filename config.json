@@ -1,0 +1,7 @@
+{
+    "name": "Tread2",
+    "version": "1.0.0",
+    "environment": "development",
+    "port": 8080,
+    "debug": true
+}

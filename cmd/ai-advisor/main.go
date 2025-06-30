@@ -49,12 +49,12 @@ func main() {
 
 	// Track breakout coins for AI advice
 	var breakoutCoins []BreakoutInfo
-	
+
 	// Scan selected pairs
 	fmt.Println("🔍 Scanning for breakout signals...")
 	for i, symbol := range allPairs {
 		fmt.Printf("📊 [%d/%d] Scanning %s...", i+1, len(allPairs), symbol.Symbol)
-		
+
 		signals, err := analyzer.AnalyzeSymbol(client.BinanceClient, symbol.Symbol)
 		if err != nil {
 			fmt.Printf(" ❌ Error: %v\n", err)
@@ -111,11 +111,11 @@ func main() {
 	for i, coin := range breakoutCoins {
 		fmt.Printf("\n🤖 AI ANALYSIS #%d: %s\n", i+1, coin.Symbol)
 		fmt.Println(strings.Repeat("=", 40))
-		
+
 		// Get detailed market data for AI analysis
 		advice := generateTradingAdvice(coin, client, analyzer)
 		fmt.Println(advice)
-		
+
 		if i < len(breakoutCoins)-1 {
 			fmt.Println("\n" + strings.Repeat("-", 60))
 		}
@@ -157,28 +157,28 @@ func generateTradingAdvice(coin BreakoutInfo, client *trading.TradingClient, ana
 	if coin.BreakoutType == "UP_BREAKOUT" {
 		advice += "🚀 AI RECOMMENDATION: **LONG POSITION**\n"
 		advice += "📈 Rationale: Bullish breakout above resistance with retest confirmation\n\n"
-		
+
 		advice += "📊 FIBONACCI TARGETS:\n"
 		advice += fmt.Sprintf("🎯 Take Profit 1 (38.2%%): $%.4f\n", fib.Extension_382)
 		advice += fmt.Sprintf("🎯 Take Profit 2 (61.8%%): $%.4f\n", fib.Extension_618)
 		advice += fmt.Sprintf("🎯 Take Profit 3 (100%%):  $%.4f\n", fib.Extension_100)
 		advice += fmt.Sprintf("🛑 Stop Loss (23.6%%):     $%.4f\n\n", fib.Retracement_236)
-		
+
 		advice += "⚡ STRATEGY:\n"
 		advice += "• Enter: Market or on pullback to breakout level\n"
 		advice += "• Risk/Reward: 1:2 to 1:3 ratio\n"
 		advice += "• Position Size: 1-2% of portfolio\n"
-		
+
 	} else if coin.BreakoutType == "DOWN_BREAKOUT" {
 		advice += "📉 AI RECOMMENDATION: **SHORT POSITION**\n"
 		advice += "🔻 Rationale: Bearish breakdown below support with retest failure\n\n"
-		
+
 		advice += "📊 FIBONACCI TARGETS:\n"
 		advice += fmt.Sprintf("🎯 Take Profit 1 (38.2%%): $%.4f\n", fib.Extension_382_Down)
 		advice += fmt.Sprintf("🎯 Take Profit 2 (61.8%%): $%.4f\n", fib.Extension_618_Down)
 		advice += fmt.Sprintf("🎯 Take Profit 3 (100%%):  $%.4f\n", fib.Extension_100_Down)
 		advice += fmt.Sprintf("🛑 Stop Loss (23.6%%):     $%.4f\n\n", fib.Retracement_764)
-		
+
 		advice += "⚡ STRATEGY:\n"
 		advice += "• Enter: Market or on bounce to breakdown level\n"
 		advice += "• Risk/Reward: 1:2 to 1:3 ratio\n"
@@ -199,19 +199,19 @@ func generateTradingAdvice(coin BreakoutInfo, client *trading.TradingClient, ana
 }
 
 type FibonacciLevels struct {
-	High                float64
-	Low                 float64
-	Retracement_236     float64
-	Retracement_382     float64
-	Retracement_500     float64
-	Retracement_618     float64
-	Retracement_764     float64
-	Extension_382       float64
-	Extension_618       float64
-	Extension_100       float64
-	Extension_382_Down  float64
-	Extension_618_Down  float64
-	Extension_100_Down  float64
+	High               float64
+	Low                float64
+	Retracement_236    float64
+	Retracement_382    float64
+	Retracement_500    float64
+	Retracement_618    float64
+	Retracement_764    float64
+	Extension_382      float64
+	Extension_618      float64
+	Extension_100      float64
+	Extension_382_Down float64
+	Extension_618_Down float64
+	Extension_100_Down float64
 }
 
 func calculateFibonacciLevels(klines []*analysis.Kline) FibonacciLevels {
@@ -222,7 +222,7 @@ func calculateFibonacciLevels(klines []*analysis.Kline) FibonacciLevels {
 	}
 
 	recentKlines := klines[len(klines)-lookback:]
-	
+
 	var high, low float64
 	high = recentKlines[0].High
 	low = recentKlines[0].Low
@@ -239,18 +239,18 @@ func calculateFibonacciLevels(klines []*analysis.Kline) FibonacciLevels {
 	diff := high - low
 
 	return FibonacciLevels{
-		High:                high,
-		Low:                 low,
-		Retracement_236:     high - (diff * 0.236),
-		Retracement_382:     high - (diff * 0.382),
-		Retracement_500:     high - (diff * 0.500),
-		Retracement_618:     high - (diff * 0.618),
-		Retracement_764:     high - (diff * 0.764),
-		Extension_382:       high + (diff * 0.382),
-		Extension_618:       high + (diff * 0.618),
-		Extension_100:       high + (diff * 1.000),
-		Extension_382_Down:  low - (diff * 0.382),
-		Extension_618_Down:  low - (diff * 0.618),
-		Extension_100_Down:  low - (diff * 1.000),
+		High:               high,
+		Low:                low,
+		Retracement_236:    high - (diff * 0.236),
+		Retracement_382:    high - (diff * 0.382),
+		Retracement_500:    high - (diff * 0.500),
+		Retracement_618:    high - (diff * 0.618),
+		Retracement_764:    high - (diff * 0.764),
+		Extension_382:      high + (diff * 0.382),
+		Extension_618:      high + (diff * 0.618),
+		Extension_100:      high + (diff * 1.000),
+		Extension_382_Down: low - (diff * 0.382),
+		Extension_618_Down: low - (diff * 0.618),
+		Extension_100_Down: low - (diff * 1.000),
 	}
 }

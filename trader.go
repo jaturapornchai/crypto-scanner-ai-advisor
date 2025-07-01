@@ -119,7 +119,9 @@ func runTrader() {
 		fmt.Printf("\n✅ Ready to trade with: %.4f USDT\n", tradableBalance)
 	}
 
-	// Cleanup orphaned orders before scanning
+	// Start Full Market Scanner
+startTrading:
+	// Cleanup orphaned orders before scanning (moved inside loop)
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("🧹 Pre-Scan Cleanup")
 	fmt.Println("====================")
@@ -127,9 +129,6 @@ func runTrader() {
 	if err := tradingClient.CleanupOrphaneOrders(ctx); err != nil {
 		log.Printf("⚠️  Warning: Failed to cleanup orphaned orders: %v", err)
 	}
-
-	// Start Full Market Scanner
-startTrading:
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("🔍 Multi-Symbol Breakout Scanner - All USDT Pairs")
 	fmt.Println("================================================")

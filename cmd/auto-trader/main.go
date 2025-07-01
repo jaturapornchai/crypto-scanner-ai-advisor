@@ -144,12 +144,12 @@ func (at *AutoTrader) setupLeverageAndMargin(symbol string) error {
 		return fmt.Errorf("failed to get margin mode for %s: %w", symbol, err)
 	}
 
-	// Set margin mode to CROSS if not already set
-	if currentMode != "CROSSED" {
-		if err := at.client.ChangeMarginMode(symbol, "CROSSED"); err != nil {
-			return fmt.Errorf("failed to set margin mode to CROSS for %s: %w", symbol, err)
+	// Set margin mode to ISOLATED if not already set
+	if currentMode != "ISOLATED" {
+		if err := at.client.ChangeMarginMode(symbol, "ISOLATED"); err != nil {
+			return fmt.Errorf("failed to set margin mode to ISOLATED for %s: %w", symbol, err)
 		}
-		log.Printf("✅ Set margin mode to CROSS for %s", symbol)
+		log.Printf("✅ Set margin mode to ISOLATED for %s", symbol)
 	}
 
 	return nil
@@ -591,7 +591,7 @@ func (at *AutoTrader) run() {
 	log.Printf("🚀 Auto Trader Bot Started!")
 	log.Printf("� Will scan ALL USDT pairs for successful retest patterns")
 	log.Printf("💰 Minimum balance: $%.2f USDT", at.minBalance)
-	log.Printf("⚙️  Leverage: 10x, Margin: CROSS")
+	log.Printf("⚙️  Leverage: 10x, Margin: ISOLATED")
 
 	for {
 		startTime := time.Now()

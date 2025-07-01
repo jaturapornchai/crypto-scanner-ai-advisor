@@ -461,6 +461,14 @@ func (tc *TradingClient) GetMarginMode(symbol string) (string, error) {
 
 	for _, pos := range positions {
 		if pos.Symbol == symbol {
+			// Check if marginType field is available and parse it
+			if pos.MarginType == string(futures.MarginTypeIsolated) {
+				return "ISOLATED", nil
+			} else if pos.MarginType == string(futures.MarginTypeCrossed) {
+				return "CROSSED", nil
+			}
+
+			// Fallback to the previous method if marginType is not available
 			if pos.MaxNotionalValue != "" {
 				return "CROSSED", nil
 			}
@@ -475,9 +483,13 @@ func (tc *TradingClient) GetMarginMode(symbol string) (string, error) {
 func (tc *TradingClient) ChangeMarginMode(symbol string, marginMode string) error {
 	ctx := context.Background()
 
-	mode := futures.MarginTypeIsolated
-	if marginMode == "CROSSED" {
+	var mode futures.MarginType
+	if marginMode == "ISOLATED" {
+		mode = futures.MarginTypeIsolated
+	} else if marginMode == "CROSSED" {
 		mode = futures.MarginTypeCrossed
+	} else {
+		return fmt.Errorf("invalid margin mode: %s (must be ISOLATED or CROSSED)", marginMode)
 	}
 
 	err := tc.BinanceClient.NewChangeMarginTypeService().
@@ -486,6 +498,11 @@ func (tc *TradingClient) ChangeMarginMode(symbol string, marginMode string) erro
 		Do(ctx)
 
 	if err != nil {
+		// Check for specific Binance error messages
+		if strings.Contains(err.Error(), "No need to change margin type") {
+			// Already in the requested margin mode, so this is not an error
+			return nil
+		}
 		return fmt.Errorf("failed to change margin mode: %w", err)
 	}
 

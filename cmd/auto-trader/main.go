@@ -150,6 +150,15 @@ func (at *AutoTrader) setupLeverageAndMargin(symbol string) error {
 			return fmt.Errorf("failed to set margin mode to ISOLATED for %s: %w", symbol, err)
 		}
 		log.Printf("✅ Set margin mode to ISOLATED for %s", symbol)
+
+		// Verify the change worked
+		updatedMode, err := at.client.GetMarginMode(symbol)
+		if err != nil {
+			log.Printf("⚠️ Warning: Could not verify margin mode change: %v", err)
+		} else if updatedMode != "ISOLATED" {
+			log.Printf("⚠️ Warning: Failed to change margin mode to ISOLATED for %s (still shows as %s)",
+				symbol, updatedMode)
+		}
 	}
 
 	return nil

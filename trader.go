@@ -63,8 +63,8 @@ type TradingSignal struct {
 
 // MeanReversionSignal represents mean reversion analysis
 type MeanReversionSignal struct {
-	Symbol          string  `json:"symbol"`
-	CurrentPrice    float64 `json:"current_price"`
+	Symbol         string  `json:"symbol"`
+	CurrentPrice   float64 `json:"current_price"`
 	MA50           float64 `json:"ma50"`
 	MA200          float64 `json:"ma200"`
 	BBUpper        float64 `json:"bb_upper"`
@@ -72,9 +72,9 @@ type MeanReversionSignal struct {
 	BBLower        float64 `json:"bb_lower"`
 	BBWidth        float64 `json:"bb_width"`
 	RSI            float64 `json:"rsi"`
-	ZScore         float64 `json:"z_score"`        // Distance from mean in standard deviations
-	Signal         string  `json:"signal"`         // OVERSOLD, OVERBOUGHT, NEUTRAL
-	Strength       float64 `json:"strength"`       // Signal strength 0-100
+	ZScore         float64 `json:"z_score"`          // Distance from mean in standard deviations
+	Signal         string  `json:"signal"`           // OVERSOLD, OVERBOUGHT, NEUTRAL
+	Strength       float64 `json:"strength"`         // Signal strength 0-100
 	LinearRegPrice float64 `json:"linear_reg_price"` // Linear regression predicted price
 	PriceDeviation float64 `json:"price_deviation"`  // % deviation from linear regression
 }
@@ -303,9 +303,9 @@ startTrading:
 				finalDecision := combineMeanReversionAndAI(meanRevSignal, aiSignal)
 				displayFinalDecision(finalDecision)
 
-				// Check confidence threshold (≥85%) and open position
-				if (finalDecision.Action == "LONG" || finalDecision.Action == "SHORT") && finalDecision.Confidence >= 85 {
-					fmt.Printf("✅ Combined Confidence ≥85%% - Proceeding with trade\n")
+				// Check confidence threshold (≥70%) and open position
+				if (finalDecision.Action == "LONG" || finalDecision.Action == "SHORT") && finalDecision.Confidence >= 70 {
+					fmt.Printf("✅ Combined Confidence ≥70%% - Proceeding with trade\n")
 					err := openRealPosition(tradingClient, finalDecision)
 					if err != nil {
 						fmt.Printf("❌ Failed to open position for %s: %v\n", symbol, err)
@@ -324,7 +324,7 @@ startTrading:
 						goto startTrading
 					}
 				} else if finalDecision.Action == "LONG" || finalDecision.Action == "SHORT" {
-					fmt.Printf("⚠️ Combined Confidence %d%% < 85%% - Skipping trade (waiting for better opportunity)\n", finalDecision.Confidence)
+					fmt.Printf("⚠️ Combined Confidence %d%% < 70%% - Skipping trade (waiting for better opportunity)\n", finalDecision.Confidence)
 				} else {
 					fmt.Printf("⏸️ Strategy recommends HOLD - No trade action\n")
 				}
@@ -392,8 +392,8 @@ func calculateMeanReversion(candles []CandleData, symbol string) (*MeanReversion
 	}
 
 	return &MeanReversionSignal{
-		Symbol:          symbol,
-		CurrentPrice:    currentPrice,
+		Symbol:         symbol,
+		CurrentPrice:   currentPrice,
 		MA50:           ma50,
 		MA200:          ma200,
 		BBUpper:        bbUpper,
@@ -839,7 +839,7 @@ func analyzeWithAI(symbol string, candleData []CandleData) (*TradingSignal, erro
 
 หมายเหตุ:
 - confidence: ความมั่นใจ 0-100 (เลขจำนวนเต็ม)
-- ถ้าความมั่นใจต่ำกว่า 80 ให้ใช้ "HOLD"
+- ถ้าความมั่นใจต่ำกว่า 70 ให้ใช้ "HOLD"
 - ให้ Stop Loss และ Take Profit เพียง 1 ระดับที่ดีที่สุดเท่านั้น`,
 		symbol, string(candleDataJSON))
 
@@ -1033,7 +1033,7 @@ func analyzeWithAIEnhanced(symbol string, candleData []CandleData, meanRevSignal
 
 หมายเหตุ:
 - confidence: ความมั่นใจ 0-100 (เลขจำนวนเต็ม)
-- ถ้าความมั่นใจต่ำกว่า 85 ให้ใช้ "HOLD"
+- ถ้าความมั่นใจต่ำกว่า 70 ให้ใช้ "HOLD"
 - พิจารณา Mean Reversion Signal ร่วมกับ chart pattern
 - ให้ Stop Loss และ Take Profit ตาม Fibonacci retracement`,
 		symbol, string(candleDataJSON), string(meanRevJSON))
@@ -1145,7 +1145,7 @@ func combineMeanReversionAndAI(meanRevSignal *MeanReversionSignal, aiSignal *Tra
 		}
 	} else if aiSignal.Action != "HOLD" && meanRevSignal.Signal == "NEUTRAL" {
 		// AI signal with neutral mean reversion
-		if aiConfidence >= 85 {
+		if aiConfidence >= 70 {
 			action = aiSignal.Action
 			analysis = fmt.Sprintf("AI LEAD: %s signal (%.0f%%) with neutral mean reversion",
 				aiSignal.Action, aiConfidence)
@@ -1201,10 +1201,10 @@ func displayFinalDecision(signal *TradingSignal) {
 	// Confidence level assessment
 	if signal.Confidence >= 90 {
 		fmt.Printf("💪 Confidence Level: VERY HIGH - Strong trade setup\n")
-	} else if signal.Confidence >= 85 {
+	} else if signal.Confidence >= 80 {
 		fmt.Printf("✅ Confidence Level: HIGH - Good trade setup\n")
 	} else if signal.Confidence >= 70 {
-		fmt.Printf("⚠️ Confidence Level: MEDIUM - Proceed with caution\n")
+		fmt.Printf("⚠️ Confidence Level: MEDIUM - Trade approved\n")
 	} else {
 		fmt.Printf("🛑 Confidence Level: LOW - Trade not recommended\n")
 	}

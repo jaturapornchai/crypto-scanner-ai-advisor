@@ -48,7 +48,7 @@ func main() {
 
 		// Get candlestick data (simplified version)
 		fmt.Printf("📊 Fetching market data for %s...\n", symbol)
-		
+
 		// Get current price
 		ticker, err := tradingClient.BinanceClient.NewListPriceChangeStatsService().Symbol(symbol).Do(context.Background())
 		if err != nil {
@@ -86,18 +86,18 @@ func main() {
 // testMeanReversionLogic demonstrates the mean reversion strategy
 func testMeanReversionLogic(symbol string, currentPrice float64) {
 	fmt.Printf("\n📊 Mean Reversion Analysis for %s:\n", symbol)
-	
+
 	// Simulate technical indicators (in real implementation, these come from calculateMeanReversion)
-	mockMA50 := currentPrice * 0.98    // Assume price is 2% above MA50
-	mockMA200 := currentPrice * 0.95   // Assume price is 5% above MA200
-	mockRSI := 65.0                    // Moderate RSI
-	mockZScore := 1.2                  // Price is 1.2 standard deviations above mean
-	
+	mockMA50 := currentPrice * 0.98  // Assume price is 2% above MA50
+	mockMA200 := currentPrice * 0.95 // Assume price is 5% above MA200
+	mockRSI := 65.0                  // Moderate RSI
+	mockZScore := 1.2                // Price is 1.2 standard deviations above mean
+
 	fmt.Printf("   💰 Current Price: $%.4f\n", currentPrice)
 	fmt.Printf("   📈 MA50: $%.4f (%.2f%% diff)\n", mockMA50, ((currentPrice-mockMA50)/mockMA50)*100)
 	fmt.Printf("   📈 MA200: $%.4f (%.2f%% diff)\n", mockMA200, ((currentPrice-mockMA200)/mockMA200)*100)
 	fmt.Printf("   ⚡ RSI: %.1f", mockRSI)
-	
+
 	if mockRSI < 30 {
 		fmt.Printf(" (OVERSOLD 🔴)")
 	} else if mockRSI > 70 {
@@ -106,7 +106,7 @@ func testMeanReversionLogic(symbol string, currentPrice float64) {
 		fmt.Printf(" (NEUTRAL 🟡)")
 	}
 	fmt.Println()
-	
+
 	fmt.Printf("   📏 Z-Score: %.2f", mockZScore)
 	if mockZScore < -2 {
 		fmt.Printf(" (EXTREME OVERSOLD 🔴)")
@@ -120,7 +120,7 @@ func testMeanReversionLogic(symbol string, currentPrice float64) {
 		fmt.Printf(" (NEUTRAL 🟡)")
 	}
 	fmt.Println()
-	
+
 	// Mean reversion signal logic
 	signal := "NEUTRAL"
 	if mockRSI < 30 && mockZScore < -1.5 {
@@ -128,6 +128,6 @@ func testMeanReversionLogic(symbol string, currentPrice float64) {
 	} else if mockRSI > 70 && mockZScore > 1.5 {
 		signal = "OVERBOUGHT - SELL SIGNAL 🔴"
 	}
-	
+
 	fmt.Printf("   🎯 Mean Reversion Signal: %s\n", signal)
 }

@@ -218,7 +218,9 @@ Please analyze this data and provide a trading recommendation in JSON format:
 Notes:
 - For confidence: provide a score from 0-100 (integer)
 - If confidence is below 85, use "HOLD" as the action
-- Provide stop loss and take profit as percentages
+- Calculate stop loss and take profit levels using Fibonacci retracement/extension
+- Provide only a single value for stop loss (percentage)
+- Provide only a single value for take profit (percentage)
 - Include brief reasoning for your recommendation`, symbol, string(candleDataJSON))
 
 	reqBody := DeepSeekRequest{
@@ -593,9 +595,9 @@ func (at *AutoTrader) run() {
 
 	for {
 		startTime := time.Now()
-		log.Printf("\n" + strings.Repeat("=", 60))
+		log.Println("\n" + strings.Repeat("=", 60))
 		log.Printf("🔄 Starting trading cycle at %s", startTime.Format("2006-01-02 15:04:05"))
-		log.Printf(strings.Repeat("=", 60))
+		log.Println(strings.Repeat("=", 60))
 
 		// Check balance first
 		hasEnoughBalance, balance, err := at.checkBalance()

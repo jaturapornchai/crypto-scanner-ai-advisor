@@ -732,12 +732,20 @@ func openRealPosition(client *trading.TradingClient, signal *TradingSignal) erro
 	// Round to reasonable precision (3 decimal places)
 	quantity = math.Floor(quantity*1000) / 1000
 
-	fmt.Printf("\n� Opening Position: %s %s\n", signal.Action, signal.Symbol)
+	fmt.Printf("\n💼 Opening Position: %s %s\n", signal.Action, signal.Symbol)
 	fmt.Printf("💰 Margin: $%.0f | Quantity: %.3f\n", margin, quantity)
 
 	// Set up leverage for the symbol
 	if err := client.SetLeverage(signal.Symbol, int(leverage)); err != nil {
 		fmt.Printf("⚠️ Leverage setup warning: %v\n", err)
+	}
+
+	// Set margin mode to ISOLATED before opening position
+	fmt.Printf("⚙️ Setting margin mode to ISOLATED for %s...\n", signal.Symbol)
+	if err := client.ChangeMarginMode(signal.Symbol, "ISOLATED"); err != nil {
+		fmt.Printf("⚠️ Margin mode setup warning: %v\n", err)
+	} else {
+		fmt.Printf("✅ Margin mode set to ISOLATED for %s\n", signal.Symbol)
 	}
 
 	// Create the market order

@@ -61,6 +61,24 @@ type TradingSignal struct {
 	Analysis     string  `json:"analysis"`
 }
 
+// MeanReversionSignal represents mean reversion analysis
+type MeanReversionSignal struct {
+	Symbol          string  `json:"symbol"`
+	CurrentPrice    float64 `json:"current_price"`
+	MA50           float64 `json:"ma50"`
+	MA200          float64 `json:"ma200"`
+	BBUpper        float64 `json:"bb_upper"`
+	BBMiddle       float64 `json:"bb_middle"`
+	BBLower        float64 `json:"bb_lower"`
+	BBWidth        float64 `json:"bb_width"`
+	RSI            float64 `json:"rsi"`
+	ZScore         float64 `json:"z_score"`        // Distance from mean in standard deviations
+	Signal         string  `json:"signal"`         // OVERSOLD, OVERBOUGHT, NEUTRAL
+	Strength       float64 `json:"strength"`       // Signal strength 0-100
+	LinearRegPrice float64 `json:"linear_reg_price"` // Linear regression predicted price
+	PriceDeviation float64 `json:"price_deviation"`  // % deviation from linear regression
+}
+
 func runTrader() {
 	// Load configuration
 	appConfig, err := config.LoadConfig("config.json")
@@ -230,10 +248,10 @@ startTrading:
 		// Show top opportunities
 		showTopOpportunities(allSignals)
 
-		// AI Analysis for successful retest symbols only
+		// Enhanced AI Analysis with Mean Reversion Strategy
 		fmt.Println("\n" + strings.Repeat("=", 60))
-		fmt.Println("🤖 AI TRADING ANALYSIS - Successful Retest Coins Only")
-		fmt.Println("====================================================")
+		fmt.Println("🤖 ENHANCED AI + MEAN REVERSION ANALYSIS")
+		fmt.Println("========================================")
 
 		// Get unique symbols with RETEST_SUCCESS signals only
 		retestSuccessSymbols := make(map[string]bool)
@@ -246,23 +264,33 @@ startTrading:
 		if len(retestSuccessSymbols) == 0 {
 			fmt.Println("❌ No symbols with successful retest found. Skipping AI analysis.")
 		} else {
-			fmt.Printf("🎯 Found %d symbols with successful retest. Analyzing with AI...\n\n", len(retestSuccessSymbols))
+			fmt.Printf("🎯 Found %d symbols with successful retest. Analyzing with Mean Reversion + AI...\n\n", len(retestSuccessSymbols))
 
-			// Analyze each symbol with AI
+			// Analyze each symbol with Mean Reversion + AI
 			aiAnalysisCount := 0
 			for symbol := range retestSuccessSymbols {
 				aiAnalysisCount++
-				fmt.Printf("🔍 [%d/%d] AI Analysis for %s...\n", aiAnalysisCount, len(retestSuccessSymbols), symbol)
+				fmt.Printf("🔍 [%d/%d] Enhanced Analysis for %s...\n", aiAnalysisCount, len(retestSuccessSymbols), symbol)
 
-				// Get candlestick data for AI analysis
+				// Get candlestick data for analysis
 				candleData, err := getCandlestickData(tradingClient, symbol, 200)
 				if err != nil {
 					fmt.Printf("❌ Failed to get candle data for %s: %v\n", symbol, err)
 					continue
 				}
 
-				// Send to AI for analysis
-				aiSignal, err := analyzeWithAI(symbol, candleData)
+				// 1. Calculate Mean Reversion Signal
+				meanRevSignal, err := calculateMeanReversion(candleData, symbol)
+				if err != nil {
+					fmt.Printf("❌ Mean reversion analysis failed for %s: %v\n", symbol, err)
+					continue
+				}
+
+				// Display Mean Reversion Analysis
+				displayMeanReversionAnalysis(meanRevSignal)
+
+				// 2. Send to AI for analysis with enhanced prompt
+				aiSignal, err := analyzeWithAIEnhanced(symbol, candleData, meanRevSignal)
 				if err != nil {
 					fmt.Printf("❌ AI analysis failed for %s: %v\n", symbol, err)
 					continue
@@ -271,10 +299,14 @@ startTrading:
 				// Display AI recommendation
 				displayAIRecommendation(aiSignal)
 
-				// Check confidence threshold (≥80%) and open position
-				if (aiSignal.Action == "LONG" || aiSignal.Action == "SHORT") && aiSignal.Confidence >= 85 {
-					fmt.Printf("✅ Confidence ≥85%% - Proceeding with trade\n")
-					err := openRealPosition(tradingClient, aiSignal)
+				// 3. Combined Strategy Decision
+				finalDecision := combineMeanReversionAndAI(meanRevSignal, aiSignal)
+				displayFinalDecision(finalDecision)
+
+				// Check confidence threshold (≥85%) and open position
+				if (finalDecision.Action == "LONG" || finalDecision.Action == "SHORT") && finalDecision.Confidence >= 85 {
+					fmt.Printf("✅ Combined Confidence ≥85%% - Proceeding with trade\n")
+					err := openRealPosition(tradingClient, finalDecision)
 					if err != nil {
 						fmt.Printf("❌ Failed to open position for %s: %v\n", symbol, err)
 						fmt.Printf("⏰ Error detected! Stopping current cycle and waiting for next round...\n")
@@ -291,14 +323,14 @@ startTrading:
 						fmt.Println("\n🚀 RESTARTING CRYPTO TRADING SCANNER...")
 						goto startTrading
 					}
-				} else if aiSignal.Action == "LONG" || aiSignal.Action == "SHORT" {
-					fmt.Printf("⚠️ Confidence %d%% < 85%% - Skipping trade (waiting for better opportunity)\n", aiSignal.Confidence)
+				} else if finalDecision.Action == "LONG" || finalDecision.Action == "SHORT" {
+					fmt.Printf("⚠️ Combined Confidence %d%% < 85%% - Skipping trade (waiting for better opportunity)\n", finalDecision.Confidence)
 				} else {
-					fmt.Printf("⏸️ AI recommends HOLD - No trade action\n")
+					fmt.Printf("⏸️ Strategy recommends HOLD - No trade action\n")
 				}
 
-				// Delay between AI calls
-				time.Sleep(2 * time.Second)
+				// Delay between analyses
+				time.Sleep(3 * time.Second)
 			}
 		}
 	}
@@ -310,9 +342,193 @@ startTrading:
 	fmt.Println("   • Wait for better setups to develop")
 }
 
-// greetUser returns a personalized greeting
-func greetUser(name string) string {
-	return fmt.Sprintf("Hello, %s! Ready to code in Go?", name)
+// calculateMeanReversion analyzes mean reversion signals
+func calculateMeanReversion(candles []CandleData, symbol string) (*MeanReversionSignal, error) {
+	if len(candles) < 200 {
+		return nil, fmt.Errorf("insufficient data for mean reversion analysis")
+	}
+
+	// Get prices for calculations
+	prices := make([]float64, len(candles))
+	for i, candle := range candles {
+		prices[i] = candle.Close
+	}
+
+	currentPrice := prices[len(prices)-1]
+
+	// Calculate Moving Averages
+	ma50 := calculateMA(prices[len(prices)-50:], 50)
+	ma200 := calculateMA(prices, 200)
+
+	// Calculate Bollinger Bands (20 period, 2 standard deviations)
+	bbUpper, bbMiddle, bbLower, bbWidth := calculateBollingerBands(prices[len(prices)-20:], 20, 2.0)
+
+	// Calculate RSI (14 period)
+	rsi := calculateRSI(prices[len(prices)-15:], 14)
+
+	// Calculate Z-Score (price distance from MA in standard deviations)
+	zScore := calculateZScore(currentPrice, ma50, prices[len(prices)-50:])
+
+	// Calculate Linear Regression price
+	linearRegPrice := calculateLinearRegression(prices[len(prices)-50:], 50)
+	priceDeviation := ((currentPrice - linearRegPrice) / linearRegPrice) * 100
+
+	// Determine signal
+	signal := "NEUTRAL"
+	strength := 0.0
+
+	// Mean Reversion Logic
+	if rsi < 30 && currentPrice < bbLower && zScore < -1.5 {
+		signal = "OVERSOLD"
+		strength = (30 - rsi) + ((bbLower - currentPrice) / bbLower * 100) + (math.Abs(zScore) * 20)
+	} else if rsi > 70 && currentPrice > bbUpper && zScore > 1.5 {
+		signal = "OVERBOUGHT"
+		strength = (rsi - 70) + ((currentPrice - bbUpper) / bbUpper * 100) + (zScore * 20)
+	}
+
+	// Cap strength at 100
+	if strength > 100 {
+		strength = 100
+	}
+
+	return &MeanReversionSignal{
+		Symbol:          symbol,
+		CurrentPrice:    currentPrice,
+		MA50:           ma50,
+		MA200:          ma200,
+		BBUpper:        bbUpper,
+		BBMiddle:       bbMiddle,
+		BBLower:        bbLower,
+		BBWidth:        bbWidth,
+		RSI:            rsi,
+		ZScore:         zScore,
+		Signal:         signal,
+		Strength:       strength,
+		LinearRegPrice: linearRegPrice,
+		PriceDeviation: priceDeviation,
+	}, nil
+}
+
+// calculateMA calculates simple moving average
+func calculateMA(prices []float64, period int) float64 {
+	if len(prices) < period {
+		return 0
+	}
+	sum := 0.0
+	for i := len(prices) - period; i < len(prices); i++ {
+		sum += prices[i]
+	}
+	return sum / float64(period)
+}
+
+// calculateBollingerBands calculates Bollinger Bands
+func calculateBollingerBands(prices []float64, period int, stdDev float64) (upper, middle, lower, width float64) {
+	if len(prices) < period {
+		return 0, 0, 0, 0
+	}
+
+	// Calculate SMA (middle band)
+	middle = calculateMA(prices, period)
+
+	// Calculate standard deviation
+	variance := 0.0
+	recentPrices := prices[len(prices)-period:]
+	for _, price := range recentPrices {
+		variance += math.Pow(price-middle, 2)
+	}
+	standardDeviation := math.Sqrt(variance / float64(period))
+
+	// Calculate bands
+	upper = middle + (standardDeviation * stdDev)
+	lower = middle - (standardDeviation * stdDev)
+	width = ((upper - lower) / middle) * 100
+
+	return upper, middle, lower, width
+}
+
+// calculateRSI calculates Relative Strength Index
+func calculateRSI(prices []float64, period int) float64 {
+	if len(prices) < period+1 {
+		return 50 // neutral RSI
+	}
+
+	gains := 0.0
+	losses := 0.0
+
+	// Calculate initial average gain and loss
+	for i := 1; i <= period; i++ {
+		change := prices[i] - prices[i-1]
+		if change > 0 {
+			gains += change
+		} else {
+			losses += math.Abs(change)
+		}
+	}
+
+	avgGain := gains / float64(period)
+	avgLoss := losses / float64(period)
+
+	if avgLoss == 0 {
+		return 100
+	}
+
+	rs := avgGain / avgLoss
+	rsi := 100 - (100 / (1 + rs))
+
+	return rsi
+}
+
+// calculateZScore calculates how many standard deviations price is from mean
+func calculateZScore(currentPrice, mean float64, prices []float64) float64 {
+	if len(prices) == 0 {
+		return 0
+	}
+
+	// Calculate standard deviation
+	variance := 0.0
+	for _, price := range prices {
+		variance += math.Pow(price-mean, 2)
+	}
+	stdDev := math.Sqrt(variance / float64(len(prices)))
+
+	if stdDev == 0 {
+		return 0
+	}
+
+	return (currentPrice - mean) / stdDev
+}
+
+// calculateLinearRegression calculates linear regression predicted price
+func calculateLinearRegression(prices []float64, period int) float64 {
+	if len(prices) < period {
+		return prices[len(prices)-1]
+	}
+
+	n := float64(period)
+	sumX := 0.0
+	sumY := 0.0
+	sumXY := 0.0
+	sumX2 := 0.0
+
+	recentPrices := prices[len(prices)-period:]
+
+	for i, price := range recentPrices {
+		x := float64(i)
+		y := price
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumX2 += x * x
+	}
+
+	// Calculate slope and intercept
+	slope := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
+	intercept := (sumY - slope*sumX) / n
+
+	// Predict next price (at position period)
+	predictedPrice := slope*float64(period) + intercept
+
+	return predictedPrice
 }
 
 // displayComprehensiveSummary shows comprehensive analysis of all signals
@@ -711,6 +927,291 @@ func displayAIRecommendation(signal *TradingSignal) {
 	fmt.Println()
 }
 
+// displayMeanReversionAnalysis shows mean reversion analysis results
+func displayMeanReversionAnalysis(signal *MeanReversionSignal) {
+	fmt.Printf("\n📊 MEAN REVERSION ANALYSIS: %s\n", signal.Symbol)
+	fmt.Println(strings.Repeat("=", 45))
+
+	// Current status
+	fmt.Printf("💰 Current Price: $%.4f\n", signal.CurrentPrice)
+	fmt.Printf("📈 MA50: $%.4f | MA200: $%.4f\n", signal.MA50, signal.MA200)
+
+	// Bollinger Bands
+	fmt.Printf("📊 Bollinger Bands:\n")
+	fmt.Printf("   Upper: $%.4f | Middle: $%.4f | Lower: $%.4f\n",
+		signal.BBUpper, signal.BBMiddle, signal.BBLower)
+	fmt.Printf("   Width: %.2f%%\n", signal.BBWidth)
+
+	// Technical indicators
+	fmt.Printf("⚡ RSI: %.1f", signal.RSI)
+	if signal.RSI < 30 {
+		fmt.Printf(" (OVERSOLD 🔴)")
+	} else if signal.RSI > 70 {
+		fmt.Printf(" (OVERBOUGHT 🟠)")
+	} else {
+		fmt.Printf(" (NEUTRAL 🟡)")
+	}
+	fmt.Println()
+
+	// Z-Score analysis
+	fmt.Printf("📏 Z-Score: %.2f", signal.ZScore)
+	if signal.ZScore < -2 {
+		fmt.Printf(" (EXTREME OVERSOLD 🔴)")
+	} else if signal.ZScore < -1 {
+		fmt.Printf(" (OVERSOLD 🟠)")
+	} else if signal.ZScore > 2 {
+		fmt.Printf(" (EXTREME OVERBOUGHT 🔴)")
+	} else if signal.ZScore > 1 {
+		fmt.Printf(" (OVERBOUGHT 🟠)")
+	} else {
+		fmt.Printf(" (NEUTRAL 🟡)")
+	}
+	fmt.Println()
+
+	// Linear regression
+	fmt.Printf("📈 Linear Regression Price: $%.4f (%.2f%% deviation)\n",
+		signal.LinearRegPrice, signal.PriceDeviation)
+
+	// Signal assessment
+	signalEmoji := "⚪"
+	if signal.Signal == "OVERSOLD" {
+		signalEmoji = "🟢"
+	} else if signal.Signal == "OVERBOUGHT" {
+		signalEmoji = "🔴"
+	}
+
+	fmt.Printf("%s Mean Reversion Signal: %s (%.1f%% strength)\n",
+		signalEmoji, signal.Signal, signal.Strength)
+	fmt.Println()
+}
+
+// analyzeWithAIEnhanced sends candlestick data and mean reversion analysis to AI
+func analyzeWithAIEnhanced(symbol string, candleData []CandleData, meanRevSignal *MeanReversionSignal) (*TradingSignal, error) {
+	// Load .env for AI API credentials
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Printf("Warning: Could not load .env file: %v", err)
+	}
+
+	apiKey := os.Getenv("DEEPSEEK_API_KEY")
+	baseURL := os.Getenv("AI_BASE_URL")
+	if apiKey == "" || baseURL == "" {
+		return nil, fmt.Errorf("missing DEEPSEEK_API_KEY or AI_BASE_URL in .env")
+	}
+
+	// Get current price
+	currentPrice := candleData[len(candleData)-1].Close
+
+	// Prepare market data summary for AI
+	candleDataJSON, _ := json.Marshal(candleData)
+	meanRevJSON, _ := json.Marshal(meanRevSignal)
+
+	prompt := fmt.Sprintf(`คุณคือนักเทรด cryptocurrency ผู้เชี่ยวชาญด้าน Mean Reversion + AI Strategy
+
+วิเคราะห์ข้อมูลสำหรับ %s:
+
+ข้อมูลแท่งเทียน (200 periods, 1h timeframe):
+%s
+
+การวิเคราะห์ Mean Reversion ที่คำนวณแล้ว:
+%s
+
+หลักการ Mean Reversion Strategy:
+- เมื่อราคาออกห่างจาก mean มากๆ (Z-Score > 2 หรือ < -2) แนวโน้มจะกลับไปหา mean
+- RSI < 30 + ราคาต่ำกว่า Bollinger Lower = สัญญาณ BUY
+- RSI > 70 + ราคาสูงกว่า Bollinger Upper = สัญญาณ SELL
+- Linear Regression ช่วยประเมินทิศทางและ fair value
+
+กรุณาวิเคราะห์ร่วมกับ Mean Reversion Signal และตอบในรูปแบบ JSON:
+{
+    "action": "LONG|SHORT|HOLD",
+    "confidence": 85,
+    "stop_loss": 2350.50,
+    "take_profit": 2580.75,
+    "analysis": "การวิเคราะห์ที่รวม Mean Reversion + Technical Analysis"
+}
+
+หมายเหตุ:
+- confidence: ความมั่นใจ 0-100 (เลขจำนวนเต็ม)
+- ถ้าความมั่นใจต่ำกว่า 85 ให้ใช้ "HOLD"
+- พิจารณา Mean Reversion Signal ร่วมกับ chart pattern
+- ให้ Stop Loss และ Take Profit ตาม Fibonacci retracement`,
+		symbol, string(candleDataJSON), string(meanRevJSON))
+
+	// Prepare request
+	reqBody := DeepSeekRequest{
+		Model: "deepseek-chat",
+		Messages: []Message{{
+			Role:    "user",
+			Content: prompt,
+		}},
+	}
+	jsonData, _ := json.Marshal(reqBody)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, _ := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	var dsResp DeepSeekResponse
+	if err := json.Unmarshal(body, &dsResp); err != nil {
+		return nil, err
+	}
+
+	if len(dsResp.Choices) == 0 {
+		return nil, fmt.Errorf("no response from AI")
+	}
+
+	// Parse AI response JSON
+	aiContent := dsResp.Choices[0].Message.Content
+
+	// Extract JSON from AI response
+	startIdx := strings.Index(aiContent, "{")
+	endIdx := strings.LastIndex(aiContent, "}") + 1
+
+	if startIdx == -1 || endIdx == 0 {
+		return nil, fmt.Errorf("invalid JSON response from AI")
+	}
+
+	jsonResponse := aiContent[startIdx:endIdx]
+
+	// Parse the JSON response
+	var aiSignal TradingSignal
+	if err := json.Unmarshal([]byte(jsonResponse), &aiSignal); err != nil {
+		return nil, fmt.Errorf("failed to parse AI JSON response: %v", err)
+	}
+
+	// Set additional fields
+	aiSignal.Symbol = symbol
+	aiSignal.CurrentPrice = currentPrice
+
+	return &aiSignal, nil
+}
+
+// combineMeanReversionAndAI combines mean reversion and AI signals
+func combineMeanReversionAndAI(meanRevSignal *MeanReversionSignal, aiSignal *TradingSignal) *TradingSignal {
+	// Create combined signal
+	combinedSignal := &TradingSignal{
+		Symbol:       meanRevSignal.Symbol,
+		CurrentPrice: meanRevSignal.CurrentPrice,
+		StopLoss:     aiSignal.StopLoss,
+		TakeProfit:   aiSignal.TakeProfit,
+	}
+
+	// Calculate combined confidence
+	meanRevConfidence := meanRevSignal.Strength
+	aiConfidence := float64(aiSignal.Confidence)
+
+	// Weighted combination (60% AI, 40% Mean Reversion)
+	combinedConfidence := (aiConfidence * 0.6) + (meanRevConfidence * 0.4)
+
+	// Strategy logic
+	action := "HOLD"
+	analysis := ""
+
+	// Strong alignment check
+	if meanRevSignal.Signal == "OVERSOLD" && aiSignal.Action == "LONG" {
+		action = "LONG"
+		analysis = fmt.Sprintf("STRONG BUY: Mean Reversion OVERSOLD (%.1f%%) + AI LONG (%.0f%%) = Aligned signals",
+			meanRevSignal.Strength, aiConfidence)
+		// Bonus for alignment
+		combinedConfidence += 10
+	} else if meanRevSignal.Signal == "OVERBOUGHT" && aiSignal.Action == "SHORT" {
+		action = "SHORT"
+		analysis = fmt.Sprintf("STRONG SELL: Mean Reversion OVERBOUGHT (%.1f%%) + AI SHORT (%.0f%%) = Aligned signals",
+			meanRevSignal.Strength, aiConfidence)
+		// Bonus for alignment
+		combinedConfidence += 10
+	} else if meanRevSignal.Signal != "NEUTRAL" && aiSignal.Action != "HOLD" {
+		// Conflicting signals - be more conservative
+		if aiConfidence >= 90 && meanRevSignal.Strength >= 70 {
+			action = aiSignal.Action
+			analysis = fmt.Sprintf("MODERATE: AI %s (%.0f%%) vs Mean Rev %s (%.1f%%) - Following stronger AI signal",
+				aiSignal.Action, aiConfidence, meanRevSignal.Signal, meanRevSignal.Strength)
+			combinedConfidence -= 15 // Penalty for conflict
+		} else {
+			action = "HOLD"
+			analysis = fmt.Sprintf("CONFLICTING: AI %s vs Mean Rev %s - Waiting for better alignment",
+				aiSignal.Action, meanRevSignal.Signal)
+			combinedConfidence = 50 // Low confidence for conflicts
+		}
+	} else if aiSignal.Action != "HOLD" && meanRevSignal.Signal == "NEUTRAL" {
+		// AI signal with neutral mean reversion
+		if aiConfidence >= 85 {
+			action = aiSignal.Action
+			analysis = fmt.Sprintf("AI LEAD: %s signal (%.0f%%) with neutral mean reversion",
+				aiSignal.Action, aiConfidence)
+		} else {
+			analysis = fmt.Sprintf("WEAK: AI %s (%.0f%%) but low confidence with neutral mean reversion",
+				aiSignal.Action, aiConfidence)
+		}
+	} else {
+		analysis = fmt.Sprintf("NEUTRAL: Both AI (%s, %.0f%%) and Mean Rev (%s, %.1f%%) suggest no action",
+			aiSignal.Action, aiConfidence, meanRevSignal.Signal, meanRevSignal.Strength)
+	}
+
+	// Cap confidence at 100
+	if combinedConfidence > 100 {
+		combinedConfidence = 100
+	}
+	if combinedConfidence < 0 {
+		combinedConfidence = 0
+	}
+
+	combinedSignal.Action = action
+	combinedSignal.Confidence = int(combinedConfidence)
+	combinedSignal.Analysis = analysis
+
+	return combinedSignal
+}
+
+// displayFinalDecision shows the final trading decision
+func displayFinalDecision(signal *TradingSignal) {
+	fmt.Printf("\n🎯 FINAL TRADING DECISION: %s\n", signal.Symbol)
+	fmt.Println(strings.Repeat("=", 50))
+
+	actionEmoji := "⚡"
+	if signal.Action == "LONG" {
+		actionEmoji = "🚀"
+	} else if signal.Action == "SHORT" {
+		actionEmoji = "📉"
+	} else if signal.Action == "HOLD" {
+		actionEmoji = "⏸️"
+	}
+
+	fmt.Printf("%s Final Action: %s\n", actionEmoji, signal.Action)
+	fmt.Printf("🎯 Combined Confidence: %d%%\n", signal.Confidence)
+
+	if signal.Action != "HOLD" {
+		fmt.Printf("💰 Current Price: $%.4f\n", signal.CurrentPrice)
+		fmt.Printf("🎯 Take Profit: $%.4f\n", signal.TakeProfit)
+		fmt.Printf("❌ Stop Loss: $%.4f\n", signal.StopLoss)
+	}
+
+	fmt.Printf("📈 Strategy Analysis: %s\n", signal.Analysis)
+
+	// Confidence level assessment
+	if signal.Confidence >= 90 {
+		fmt.Printf("💪 Confidence Level: VERY HIGH - Strong trade setup\n")
+	} else if signal.Confidence >= 85 {
+		fmt.Printf("✅ Confidence Level: HIGH - Good trade setup\n")
+	} else if signal.Confidence >= 70 {
+		fmt.Printf("⚠️ Confidence Level: MEDIUM - Proceed with caution\n")
+	} else {
+		fmt.Printf("🛑 Confidence Level: LOW - Trade not recommended\n")
+	}
+
+	fmt.Println()
+}
+
 // min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
@@ -785,4 +1286,9 @@ func openRealPosition(client *trading.TradingClient, signal *TradingSignal) erro
 	}
 
 	return nil
+}
+
+// greetUser returns a personalized greeting
+func greetUser(name string) string {
+	return fmt.Sprintf("Hello, %s! Welcome to the trading bot.", name)
 }

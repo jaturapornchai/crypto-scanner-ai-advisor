@@ -461,15 +461,15 @@ func (tc *TradingClient) GetMarginMode(symbol string) (string, error) {
 
 	for _, pos := range positions {
 		if pos.Symbol == symbol {
-			// Check if marginType field is available and parse it
-			if pos.MarginType == string(futures.MarginTypeIsolated) {
+			// Use MarginType field directly (most reliable)
+			if pos.MarginType == "isolated" {
 				return "ISOLATED", nil
-			} else if pos.MarginType == string(futures.MarginTypeCrossed) {
+			} else if pos.MarginType == "cross" {
 				return "CROSSED", nil
 			}
 
-			// Fallback to the previous method if marginType is not available
-			if pos.MaxNotionalValue != "" {
+			// Fallback: if MarginType is empty or unknown, use MaxNotionalValue method
+			if pos.MaxNotionalValue != "" && pos.MaxNotionalValue != "0" {
 				return "CROSSED", nil
 			}
 			return "ISOLATED", nil

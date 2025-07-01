@@ -24,6 +24,14 @@ func main() {
 		log.Fatalf("❌ Failed to initialize trading client: %v", err)
 	}
 
+	// Cleanup orphaned orders before analysis
+	fmt.Println("🧹 Cleaning up orphaned orders before AI analysis...")
+	ctx := context.Background()
+	if err := client.CleanupOrphaneOrders(ctx); err != nil {
+		log.Printf("⚠️  Warning: Failed to cleanup orphaned orders: %v", err)
+	}
+	fmt.Println()
+
 	// Get all USDT pairs from exchange
 	fmt.Println("🔄 Fetching all USDT pairs from Binance...")
 	allPairs, err := client.GetUSDTPairs(context.Background())

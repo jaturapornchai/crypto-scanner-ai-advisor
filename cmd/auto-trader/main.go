@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
 	config "tread2/internal"
 	"tread2/pkg/analysis"
 	"tread2/pkg/trading"
+
+	"github.com/joho/godotenv"
 )
 
 // AI API structures
@@ -38,12 +39,12 @@ type DeepSeekResponse struct {
 
 // AI Analysis Result
 type AIAnalysisResult struct {
-	Action         string  `json:"action"`          // "LONG", "SHORT", or "HOLD"
-	Confidence     float64 `json:"confidence"`      // 0-100 (0 for HOLD)
-	StopLoss       float64 `json:"stop_loss"`       // Percentage
-	TakeProfit     float64 `json:"take_profit"`     // Percentage
-	Reasoning      string  `json:"reasoning"`       // AI's reasoning
-	RiskLevel      string  `json:"risk_level"`      // "LOW", "MEDIUM", "HIGH"
+	Action     string  `json:"action"`      // "LONG", "SHORT", or "HOLD"
+	Confidence float64 `json:"confidence"`  // 0-100 (0 for HOLD)
+	StopLoss   float64 `json:"stop_loss"`   // Percentage
+	TakeProfit float64 `json:"take_profit"` // Percentage
+	Reasoning  string  `json:"reasoning"`   // AI's reasoning
+	RiskLevel  string  `json:"risk_level"`  // "LOW", "MEDIUM", "HIGH"
 }
 
 // CandleData represents candlestick data for AI analysis
@@ -51,10 +52,10 @@ type CandleData = analysis.CandleData
 
 // AutoTrader represents the main trading bot
 type AutoTrader struct {
-	client      *trading.TradingClient
-	config      *config.AppConfig
-	minBalance  float64  // Minimum USDT balance required for trading
-	symbols     []string // Symbols to trade
+	client     *trading.TradingClient
+	config     *config.AppConfig
+	minBalance float64  // Minimum USDT balance required for trading
+	symbols    []string // Symbols to trade
 }
 
 // NewAutoTrader creates a new auto trader instance
@@ -156,7 +157,7 @@ func (at *AutoTrader) setupLeverageAndMargin(symbol string) error {
 
 // getMarketData gets candlestick data for AI analysis
 func (at *AutoTrader) getMarketData(symbol string) ([]CandleData, error) {
-	klines, err := at.client.GetKlines(symbol, "1h", 100)
+	klines, err := at.client.GetKlines(symbol, "1h", 200)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get klines for %s: %w", symbol, err)
 	}
@@ -196,37 +197,15 @@ func (at *AutoTrader) analyzeWithAI(symbol string, candles []CandleData) (*AIAna
 		return nil, fmt.Errorf("insufficient market data")
 	}
 
-	latest := candles[len(candles)-1]
-	prev := candles[len(candles)-2]
-	
-	priceChange := ((latest.Close - prev.Close) / prev.Close) * 100
-	
-	// Get technical indicators
-	breakoutData := analysis.DetectBreakouts(symbol, candles, 14, 2.0)
-	
-	prompt := fmt.Sprintf(`
-You are a professional cryptocurrency trading advisor. Analyze the following market data for %s and provide trading recommendations.
+	// Prepare candlestick data for AI analysis
+	candleDataJSON, _ := json.Marshal(candles)
 
-CURRENT MARKET DATA:
-- Current Price: $%.2f
-- Price Change (1h): %.2f%%
-- 24h High: $%.2f
-- 24h Low: $%.2f
-- Volume: %.2f
+	prompt := fmt.Sprintf(`You are a professional cryptocurrency trading advisor.
 
-TECHNICAL ANALYSIS:
-- Breakout Signal: %v
-- Market Trend: %s
+Historical data for %s (200 timeframes, 1h intervals):
+%s
 
-INSTRUCTIONS:
-1. Analyze the technical indicators and market conditions
-2. Provide a trading signal: LONG, SHORT, or HOLD
-3. If LONG/SHORT, provide confidence score (1-100)
-4. If HOLD, set confidence to 0
-5. Suggest stop loss and take profit percentages
-6. Explain your reasoning
-
-Please respond in JSON format:
+Please analyze this data and provide a trading recommendation in JSON format:
 {
   "action": "LONG|SHORT|HOLD",
   "confidence": 0-100,
@@ -236,13 +215,11 @@ Please respond in JSON format:
   "risk_level": "LOW|MEDIUM|HIGH"
 }
 
-Consider:
-- Current market volatility
-- Technical indicators strength
-- Risk management
-- Only recommend high-confidence trades (confidence > 70)
-`, symbol, latest.Close, priceChange, latest.High, latest.Low, latest.Volume, 
-   breakoutData.HasBreakout, breakoutData.Direction)
+Notes:
+- For confidence: provide a score from 0-100 (integer)
+- If confidence is below 85, use "HOLD" as the action
+- Provide stop loss and take profit as percentages
+- Include brief reasoning for your recommendation`, symbol, string(candleDataJSON))
 
 	reqBody := DeepSeekRequest{
 		Model: "deepseek-chat",
@@ -291,16 +268,16 @@ Consider:
 
 	// Parse AI response
 	content := aiResp.Choices[0].Message.Content
-	
+
 	// Extract JSON from AI response
 	startIdx := strings.Index(content, "{")
 	endIdx := strings.LastIndex(content, "}")
 	if startIdx == -1 || endIdx == -1 {
 		return nil, fmt.Errorf("invalid AI response format")
 	}
-	
+
 	jsonStr := content[startIdx : endIdx+1]
-	
+
 	var result AIAnalysisResult
 	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse AI analysis: %w", err)
@@ -313,20 +290,20 @@ Consider:
 func (at *AutoTrader) calculatePositionSize(balance float64, price float64, riskPercent float64) float64 {
 	// Use fixed $15 margin for position
 	maxUSDT := 15.0
-	
+
 	// Calculate position size considering leverage (10x)
 	leveragedAmount := maxUSDT * 10
-	
+
 	// Apply risk management (max 5% risk per trade)
 	if riskPercent > 5.0 {
 		riskPercent = 5.0
 	}
-	
+
 	riskAmount := balance * (riskPercent / 100)
 	positionValue := math.Min(leveragedAmount, riskAmount*10) // 10x leverage
-	
+
 	quantity := positionValue / price
-	
+
 	// Round to reasonable precision
 	return math.Floor(quantity*1000) / 1000
 }
@@ -338,7 +315,7 @@ func (at *AutoTrader) openPosition(symbol string, analysis *AIAnalysisResult, ba
 	if err != nil {
 		return fmt.Errorf("failed to get ticker for %s: %w", symbol, err)
 	}
-	
+
 	currentPrice, err := strconv.ParseFloat(ticker.Price, 64)
 	if err != nil {
 		return fmt.Errorf("failed to parse price: %w", err)
@@ -346,7 +323,7 @@ func (at *AutoTrader) openPosition(symbol string, analysis *AIAnalysisResult, ba
 
 	// Calculate position size
 	quantity := at.calculatePositionSize(balance, currentPrice, 3.0) // 3% risk per trade
-	
+
 	if quantity <= 0 {
 		return fmt.Errorf("calculated position size too small")
 	}
@@ -388,12 +365,12 @@ func (at *AutoTrader) openPosition(symbol string, analysis *AIAnalysisResult, ba
 
 	log.Printf("✅ Market order executed: %s", order.OrderID)
 
-	// Set stop loss order  
+	// Set stop loss order
 	stopSide := "SELL"
 	if analysis.Action == "SHORT" {
 		stopSide = "BUY"
 	}
-	
+
 	stopOrder, err := at.client.CreateOrder(&trading.OrderRequest{
 		Symbol:        symbol,
 		Side:          stopSide,
@@ -412,7 +389,7 @@ func (at *AutoTrader) openPosition(symbol string, analysis *AIAnalysisResult, ba
 	tpOrder, err := at.client.CreateOrder(&trading.OrderRequest{
 		Symbol:        symbol,
 		Side:          stopSide,
-		Type:          "TAKE_PROFIT_MARKET", 
+		Type:          "TAKE_PROFIT_MARKET",
 		Quantity:      fmt.Sprintf("%.3f", quantity),
 		StopPrice:     fmt.Sprintf("%.4f", takeProfitPrice),
 		ClosePosition: true,
@@ -424,7 +401,7 @@ func (at *AutoTrader) openPosition(symbol string, analysis *AIAnalysisResult, ba
 	}
 
 	log.Printf("💡 Reasoning: %s", analysis.Reasoning)
-	
+
 	return nil
 }
 
@@ -455,7 +432,7 @@ func (at *AutoTrader) processSymbol(symbol string, balance float64) error {
 	log.Printf("   Risk Level: %s", analysis.RiskLevel)
 
 	// Check if we should trade
-	if analysis.Action == "HOLD" || analysis.Confidence < 70 {
+	if analysis.Action == "HOLD" || analysis.Confidence < 85 {
 		log.Printf("⏸️  Skipping %s - %s with %.1f%% confidence", symbol, analysis.Action, analysis.Confidence)
 		return nil
 	}
@@ -473,10 +450,10 @@ func (at *AutoTrader) waitUntilNextHour() {
 	now := time.Now()
 	nextHour := now.Truncate(time.Hour).Add(time.Hour).Add(1 * time.Minute)
 	duration := nextHour.Sub(now)
-	
-	log.Printf("⏰ Waiting until next hour: %s (%.0f minutes)", 
+
+	log.Printf("⏰ Waiting until next hour: %s (%.0f minutes)",
 		nextHour.Format("15:04"), duration.Minutes())
-	
+
 	time.Sleep(duration)
 }
 
@@ -498,7 +475,7 @@ func (at *AutoTrader) scanForRetestSymbols() ([]string, error) {
 
 	for i, symbol := range symbols {
 		totalScanned++
-		
+
 		// Progress logging every 50 symbols
 		if i%50 == 0 {
 			log.Printf("📈 Progress: %d/%d symbols scanned", i, len(symbols))
@@ -571,7 +548,7 @@ func (at *AutoTrader) hasSuccessfulRetest(symbol string, candles []CandleData) b
 
 	// Use technical analyzer to detect patterns
 	analyzer := analysis.NewTechnicalAnalyzer()
-	
+
 	// Convert to Kline format for technical analysis
 	klines := make([]*analysis.Kline, len(candles))
 	for i, candle := range candles {
@@ -613,7 +590,7 @@ func (at *AutoTrader) run() {
 	log.Printf("� Will scan ALL USDT pairs for successful retest patterns")
 	log.Printf("💰 Minimum balance: $%.2f USDT", at.minBalance)
 	log.Printf("⚙️  Leverage: 10x, Margin: CROSS")
-	
+
 	for {
 		startTime := time.Now()
 		log.Printf("\n" + strings.Repeat("=", 60))
@@ -629,7 +606,7 @@ func (at *AutoTrader) run() {
 			log.Printf("⏭️  Skipping this cycle...")
 		} else {
 			log.Printf("💰 Available balance: $%.2f USDT", balance)
-			
+
 			// Scan for symbols with successful retest patterns
 			retestSymbols, err := at.scanForRetestSymbols()
 			if err != nil {
@@ -638,18 +615,18 @@ func (at *AutoTrader) run() {
 				log.Printf("🔍 No symbols found with successful retest patterns")
 			} else {
 				log.Printf("📈 Found %d symbols with successful retests", len(retestSymbols))
-				
+
 				// Analyze ALL symbols with successful retest (no limit)
 				log.Printf("🤖 Proceeding with AI analysis for ALL %d quality coins...", len(retestSymbols))
-				
+
 				// Process each symbol with retest pattern
 				for i, symbol := range retestSymbols {
 					log.Printf("\n🔍 [%d/%d] Analyzing %s with AI...", i+1, len(retestSymbols), symbol)
-					
+
 					if err := at.processSymbol(symbol, balance); err != nil {
 						log.Printf("❌ Error processing %s: %v", symbol, err)
 					}
-					
+
 					// Small delay between symbols
 					time.Sleep(2 * time.Second)
 				}
@@ -657,7 +634,7 @@ func (at *AutoTrader) run() {
 		}
 
 		log.Printf("\n✅ Trading cycle completed in %.1f seconds", time.Since(startTime).Seconds())
-		
+
 		// Wait until next hour
 		at.waitUntilNextHour()
 	}
@@ -665,7 +642,7 @@ func (at *AutoTrader) run() {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	
+
 	// Create auto trader
 	trader, err := NewAutoTrader()
 	if err != nil {

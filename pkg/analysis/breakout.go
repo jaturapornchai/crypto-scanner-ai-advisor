@@ -45,6 +45,7 @@ type BreakoutSignal struct {
 	Strength     int       `json:"strength"` // Number of previous candles that respected the level
 	Description  string    `json:"description"`
 	Confidence   float64   `json:"confidence"`
+	RSI          float64   `json:"rsi"` // RSI value at signal time
 }
 
 // BreakoutInfo stores information about a recent breakout
@@ -199,14 +200,34 @@ func (ta *TechnicalAnalyzer) DetectBreakouts(klines []*Kline, symbol string) []*
 	for i := analysisEnd; i < len(klines); i++ {
 		currentKline := klines[i]
 
-		// Check for breakouts
+		// Calculate RSI at current position
+		currentRSI := ta.CalculateRSI(closes[:i+1], 14) // 14-period RSI
+
+		// Check for breakouts with RSI filter
 		if signal := ta.checkBreakout(currentKline, channel, symbol, i, klines); signal != nil {
-			signals = append(signals, signal)
+			signal.RSI = currentRSI
+			// Apply RSI filter
+			if ta.RSIFilter(currentRSI, signal.Type) {
+				signals = append(signals, signal)
+			}
 		}
 
-		// Check for retests with proper validation
+		// Check for retests with proper validation and RSI filter
 		if signal := ta.checkRetest(currentKline, channel, symbol, i, klines); signal != nil {
-			signals = append(signals, signal)
+			signal.RSI = currentRSI
+			// Apply RSI filter for retest signals
+			retestType := signal.Type
+			if signal.Type == "RETEST_SUCCESS" {
+				// Determine if it's an upper or lower retest for RSI filtering
+				if signal.Price > signal.ChannelLevel {
+					retestType = "RETEST_SUCCESS_UP"
+				} else {
+					retestType = "RETEST_SUCCESS_DOWN"
+				}
+			}
+			if ta.RSIFilter(currentRSI, retestType) {
+				signals = append(signals, signal)
+			}
 		}
 	}
 
@@ -595,6 +616,59 @@ func (ta *TechnicalAnalyzer) calculateConfidence(strength int, distance float64,
 	return confidence
 }
 
+// CalculateRSI calculates Relative Strength Index
+func (ta *TechnicalAnalyzer) CalculateRSI(prices []float64, period int) float64 {
+	if len(prices) < period+1 {
+		return 50.0 // Default neutral RSI
+	}
+
+	// Get the last period+1 prices to calculate gains/losses
+	data := prices[len(prices)-period-1:]
+
+	var gains, losses []float64
+
+	// Calculate price changes
+	for i := 1; i < len(data); i++ {
+		change := data[i] - data[i-1]
+		if change > 0 {
+			gains = append(gains, change)
+			losses = append(losses, 0)
+		} else {
+			gains = append(gains, 0)
+			losses = append(losses, -change)
+		}
+	}
+
+	// Calculate average gains and losses
+	avgGain := ta.sum(gains) / float64(len(gains))
+	avgLoss := ta.sum(losses) / float64(len(losses))
+
+	if avgLoss == 0 {
+		return 100.0 // No losses = maximum RSI
+	}
+
+	rs := avgGain / avgLoss
+	rsi := 100 - (100 / (1 + rs))
+
+	return rsi
+}
+
+// RSIFilter checks if RSI is suitable for LONG/SHORT signals
+func (ta *TechnicalAnalyzer) RSIFilter(rsi float64, signalType string) bool {
+	switch signalType {
+	case "UP_BREAKOUT", "RETEST_SUCCESS_UP":
+		// For LONG signals: RSI should not be extremely overbought
+		// Allow RSI between 30-80 (avoid extreme overbought above 80)
+		return rsi >= 30 && rsi <= 80
+	case "DOWN_BREAKOUT", "RETEST_SUCCESS_DOWN":
+		// For SHORT signals: RSI should not be extremely oversold
+		// Allow RSI between 20-70 (avoid extreme oversold below 20)
+		return rsi >= 20 && rsi <= 70
+	default:
+		return true // Default: allow all
+	}
+}
+
 // AnalyzeSymbol performs complete breakout analysis for a symbol
 func (ta *TechnicalAnalyzer) AnalyzeSymbol(client *futures.Client, symbol string) ([]*BreakoutSignal, error) {
 	// Get 1h kline data (enough for analysis + history)
@@ -633,7 +707,7 @@ func (ta *TechnicalAnalyzer) FormatSignals(signals []*BreakoutSignal) string {
 		result += fmt.Sprintf("%s %d. %s - %s\n", emoji, i+1, signal.Symbol, signal.Type)
 		result += fmt.Sprintf("   Time: %s\n", signal.Timestamp.Format("2006-01-02 15:04:05"))
 		result += fmt.Sprintf("   Price: %.4f | Level: %.4f\n", signal.Price, signal.ChannelLevel)
-		result += fmt.Sprintf("   Strength: %d | Confidence: %.2f%%\n", signal.Strength, signal.Confidence*100)
+		result += fmt.Sprintf("   Strength: %d | Confidence: %.2f%% | RSI: %.1f\n", signal.Strength, signal.Confidence*100, signal.RSI)
 		result += fmt.Sprintf("   %s\n\n", signal.Description)
 	}
 
@@ -642,8 +716,8 @@ func (ta *TechnicalAnalyzer) FormatSignals(signals []*BreakoutSignal) string {
 
 // BreakoutData represents breakout analysis result for AI
 type BreakoutData struct {
-	HasBreakout bool   `json:"has_breakout"`
-	Direction   string `json:"direction"` // "UP" or "DOWN" or "NEUTRAL"
+	HasBreakout bool    `json:"has_breakout"`
+	Direction   string  `json:"direction"` // "UP" or "DOWN" or "NEUTRAL"
 	Confidence  float64 `json:"confidence"`
 }
 
@@ -698,7 +772,7 @@ func DetectBreakouts(symbol string, candles []CandleData, period int, deviation 
 
 	// Get the most recent signal
 	latestSignal := signals[len(signals)-1]
-	
+
 	var direction string
 	hasBreakout := false
 

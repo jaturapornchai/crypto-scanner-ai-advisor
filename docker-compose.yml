@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  tread2:
+    build: .
+    image: tread2:latest
+    container_name: tread2-scanner
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Bangkok
+    volumes:
+      - ./logs:/root/logs
+      - ./.env:/root/.env:ro
+    networks:
+      - crypto-network
+
+networks:
+  crypto-network:
+    driver: bridge

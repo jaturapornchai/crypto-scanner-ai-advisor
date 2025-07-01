@@ -385,6 +385,31 @@ type OrderResponse struct {
 	AvgPrice    float64
 }
 
+// Position represents a trading position
+type Position struct {
+	Symbol           string  `json:"symbol"`
+	PositionAmt      float64 `json:"positionAmt"`
+	EntryPrice       float64 `json:"entryPrice"`
+	MarkPrice        float64 `json:"markPrice"`
+	UnrealizedProfit float64 `json:"unrealizedProfit"`
+	Leverage         int     `json:"leverage"`
+	Side             string  `json:"side"`
+}
+
+// Order represents an order
+type Order struct {
+	OrderID       int64   `json:"orderId"`
+	Symbol        string  `json:"symbol"`
+	Status        string  `json:"status"`
+	Side          string  `json:"side"`
+	Type          string  `json:"type"`
+	OrigQty       float64 `json:"origQty"`
+	Price         float64 `json:"price"`
+	StopPrice     float64 `json:"stopPrice"`
+	ReduceOnly    bool    `json:"reduceOnly"`
+	ClosePosition bool    `json:"closePosition"`
+}
+
 // GetLeverage gets current leverage for a symbol
 func (tc *TradingClient) GetLeverage(symbol string) (int, error) {
 	ctx := context.Background()
@@ -740,6 +765,187 @@ func (tc *TradingClient) SetLeverage(symbol string, leverage int) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to set leverage: %w", err)
+	}
+
+	return nil
+}
+
+// GetPositions retrieves all current positions
+func (tc *TradingClient) GetPositions(ctx context.Context) ([]Position, error) {
+	positions, err := tc.BinanceClient.NewGetPositionRiskService().Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	var result []Position
+	for _, pos := range positions {
+		positionAmt, _ := strconv.ParseFloat(pos.PositionAmt, 64)
+		// Only include positions with non-zero amount
+		if positionAmt != 0 {
+			entryPrice, _ := strconv.ParseFloat(pos.EntryPrice, 64)
+			markPrice, _ := strconv.ParseFloat(pos.MarkPrice, 64)
+			unrealizedProfit, _ := strconv.ParseFloat(pos.UnRealizedProfit, 64)
+			leverage, _ := strconv.Atoi(pos.Leverage)
+
+			side := "LONG"
+			if positionAmt < 0 {
+				side = "SHORT"
+				positionAmt = -positionAmt // Make position amount positive for display
+			}
+
+			result = append(result, Position{
+				Symbol:           pos.Symbol,
+				PositionAmt:      positionAmt,
+				EntryPrice:       entryPrice,
+				MarkPrice:        markPrice,
+				UnrealizedProfit: unrealizedProfit,
+				Leverage:         leverage,
+				Side:             side,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+// GetOpenOrders retrieves all open orders
+func (tc *TradingClient) GetOpenOrders(ctx context.Context) ([]Order, error) {
+	orders, err := tc.BinanceClient.NewListOpenOrdersService().Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get open orders: %w", err)
+	}
+
+	var result []Order
+	for _, order := range orders {
+		origQty, _ := strconv.ParseFloat(order.OrigQuantity, 64)
+		price, _ := strconv.ParseFloat(order.Price, 64)
+		stopPrice, _ := strconv.ParseFloat(order.StopPrice, 64)
+
+		result = append(result, Order{
+			OrderID:       order.OrderID,
+			Symbol:        order.Symbol,
+			Status:        string(order.Status),
+			Side:          string(order.Side),
+			Type:          string(order.Type),
+			OrigQty:       origQty,
+			Price:         price,
+			StopPrice:     stopPrice,
+			ReduceOnly:    order.ReduceOnly,
+			ClosePosition: order.ClosePosition,
+		})
+	}
+
+	return result, nil
+}
+
+// CancelOrder cancels an order by order ID
+func (tc *TradingClient) CancelOrder(ctx context.Context, symbol string, orderID int64) error {
+	_, err := tc.BinanceClient.NewCancelOrderService().
+		Symbol(symbol).
+		OrderID(orderID).
+		Do(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to cancel order %d for %s: %w", orderID, symbol, err)
+	}
+
+	return nil
+}
+
+// CleanupOrphaneOrders ตรวจสอบและปิด orders ที่ไม่มี position แล้ว
+func (tc *TradingClient) CleanupOrphaneOrders(ctx context.Context) error {
+	fmt.Println("🧹 Cleaning up orphaned orders (orders without positions)...")
+
+	// ดึงข้อมูล positions ที่มีอยู่
+	positions, err := tc.GetPositions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	// สร้าง map ของ symbols ที่มี position
+	positionSymbols := make(map[string]bool)
+	for _, pos := range positions {
+		positionSymbols[pos.Symbol] = true
+	}
+
+	fmt.Printf("📊 Found %d active positions\n", len(positions))
+	if len(positions) > 0 {
+		fmt.Println("💼 Active positions:")
+		for _, pos := range positions {
+			fmt.Printf("   %s: %s %.6f @ %.4f (PnL: %.4f USDT)\n",
+				pos.Symbol, pos.Side, pos.PositionAmt, pos.EntryPrice, pos.UnrealizedProfit)
+		}
+	}
+
+	// ดึงข้อมูล open orders
+	orders, err := tc.GetOpenOrders(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get open orders: %w", err)
+	}
+
+	fmt.Printf("📋 Found %d open orders\n", len(orders))
+
+	var orphanedOrders []Order
+	var keepOrders []Order
+
+	// แยก orders ที่เป็น orphaned (ไม่มี position) และที่ต้องเก็บไว้
+	for _, order := range orders {
+		// เช็คว่าเป็น take profit หรือ stop loss order
+		isTakeProfitOrStopLoss := order.ReduceOnly ||
+			order.Type == "TAKE_PROFIT_MARKET" ||
+			order.Type == "STOP_MARKET" ||
+			order.Type == "TRAILING_STOP_MARKET"
+
+		if isTakeProfitOrStopLoss && !positionSymbols[order.Symbol] {
+			// Order นี้เป็น TP/SL แต่ไม่มี position แล้ว = orphaned
+			orphanedOrders = append(orphanedOrders, order)
+		} else {
+			keepOrders = append(keepOrders, order)
+		}
+	}
+
+	if len(orphanedOrders) == 0 {
+		fmt.Println("✅ No orphaned orders found - all orders have corresponding positions")
+		return nil
+	}
+
+	fmt.Printf("🗑️  Found %d orphaned orders to cancel:\n", len(orphanedOrders))
+
+	canceledCount := 0
+	for _, order := range orphanedOrders {
+		fmt.Printf("   Canceling %s %s %s Order #%d (Price: %.6f)\n",
+			order.Symbol, order.Type, order.Side, order.OrderID,
+			func() float64 {
+				if order.StopPrice > 0 {
+					return order.StopPrice
+				}
+				return order.Price
+			}())
+
+		err := tc.CancelOrder(ctx, order.Symbol, order.OrderID)
+		if err != nil {
+			fmt.Printf("   ❌ Failed to cancel order %d: %v\n", order.OrderID, err)
+		} else {
+			fmt.Printf("   ✅ Successfully canceled order %d\n", order.OrderID)
+			canceledCount++
+		}
+	}
+
+	fmt.Printf("🧹 Cleanup completed: %d/%d orders canceled\n", canceledCount, len(orphanedOrders))
+	fmt.Printf("📋 Remaining orders: %d\n", len(keepOrders))
+
+	if len(keepOrders) > 0 {
+		fmt.Println("📝 Remaining active orders:")
+		for _, order := range keepOrders {
+			fmt.Printf("   %s %s %s: %.6f @ %.6f\n",
+				order.Symbol, order.Type, order.Side, order.OrigQty,
+				func() float64 {
+					if order.StopPrice > 0 {
+						return order.StopPrice
+					}
+					return order.Price
+				}())
+		}
 	}
 
 	return nil

@@ -15,11 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
 	config "tread2/internal"
 	"tread2/pkg/analysis"
 	"tread2/pkg/trading"
 	"tread2/pkg/utils"
+
+	"github.com/joho/godotenv"
 )
 
 // AI API structures
@@ -52,8 +53,8 @@ type CandleData struct {
 // TradingSignal represents AI trading recommendation
 type TradingSignal struct {
 	Symbol       string  `json:"symbol"`
-	Action       string  `json:"action"`       // LONG, SHORT, HOLD
-	Confidence   float64 `json:"confidence"`
+	Action       string  `json:"action"`     // LONG, SHORT, HOLD
+	Confidence   int     `json:"confidence"` // 0-100%
 	CurrentPrice float64 `json:"current_price"`
 	StopLoss     float64 `json:"stop_loss"`
 	TakeProfit   float64 `json:"take_profit"`
@@ -118,7 +119,17 @@ func runTrader() {
 		fmt.Printf("\n✅ Ready to trade with: %.4f USDT\n", tradableBalance)
 	}
 
+	// Cleanup orphaned orders before scanning
+	fmt.Println("\n" + strings.Repeat("=", 60))
+	fmt.Println("🧹 Pre-Scan Cleanup")
+	fmt.Println("====================")
+
+	if err := tradingClient.CleanupOrphaneOrders(ctx); err != nil {
+		log.Printf("⚠️  Warning: Failed to cleanup orphaned orders: %v", err)
+	}
+
 	// Start Full Market Scanner
+startTrading:
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("🔍 Multi-Symbol Breakout Scanner - All USDT Pairs")
 	fmt.Println("================================================")
@@ -224,7 +235,7 @@ func runTrader() {
 		fmt.Println("\n" + strings.Repeat("=", 60))
 		fmt.Println("🤖 AI TRADING ANALYSIS - Successful Retest Coins Only")
 		fmt.Println("====================================================")
-		
+
 		// Get unique symbols with RETEST_SUCCESS signals only
 		retestSuccessSymbols := make(map[string]bool)
 		for _, signal := range allSignals {
@@ -243,61 +254,61 @@ func runTrader() {
 			for symbol := range retestSuccessSymbols {
 				aiAnalysisCount++
 				fmt.Printf("🔍 [%d/%d] AI Analysis for %s...\n", aiAnalysisCount, len(retestSuccessSymbols), symbol)
-			
-			// Get candlestick data for AI analysis
-			candleData, err := getCandlestickData(tradingClient, symbol, 200)
-			if err != nil {
-				fmt.Printf("❌ Failed to get candle data for %s: %v\n", symbol, err)
-				continue
-			}
 
-			// Send to AI for analysis
-			aiSignal, err := analyzeWithAI(symbol, candleData)
-			if err != nil {
-				fmt.Printf("❌ AI analysis failed for %s: %v\n", symbol, err)
-				continue
-			}
-
-			// Display AI recommendation
-			displayAIRecommendation(aiSignal)
-			
-			// Open real position if AI recommends BUY or SELL
-			if aiSignal.Action == "LONG" || aiSignal.Action == "SHORT" {
-				err := openRealPosition(tradingClient, aiSignal)
+				// Get candlestick data for AI analysis
+				candleData, err := getCandlestickData(tradingClient, symbol, 200)
 				if err != nil {
-					fmt.Printf("❌ Failed to open position for %s: %v\n", symbol, err)
-					// Check if it's insufficient balance error
-					if strings.Contains(err.Error(), "insufficient balance") {
-						fmt.Printf("\n💰 INSUFFICIENT BALANCE DETECTED!\n")
-						fmt.Printf("⏰ Waiting 1 hour before next trading cycle...\n")
+					fmt.Printf("❌ Failed to get candle data for %s: %v\n", symbol, err)
+					continue
+				}
+
+				// Send to AI for analysis
+				aiSignal, err := analyzeWithAI(symbol, candleData)
+				if err != nil {
+					fmt.Printf("❌ AI analysis failed for %s: %v\n", symbol, err)
+					continue
+				}
+
+				// Display AI recommendation
+				displayAIRecommendation(aiSignal)
+
+				// Check confidence threshold (≥80%) and open position
+				if (aiSignal.Action == "LONG" || aiSignal.Action == "SHORT") && aiSignal.Confidence >= 85 {
+					fmt.Printf("✅ Confidence ≥85%% - Proceeding with trade\n")
+					err := openRealPosition(tradingClient, aiSignal)
+					if err != nil {
+						fmt.Printf("❌ Failed to open position for %s: %v\n", symbol, err)
+						fmt.Printf("⏰ Error detected! Stopping current cycle and waiting for next round...\n")
 						fmt.Printf("🕐 Current time: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 						fmt.Printf("🕑 Next cycle at: %s\n", time.Now().Add(1*time.Hour).Format("2006-01-02 15:04:05"))
-						
+
 						// Wait for 1 hour
 						time.Sleep(1 * time.Hour)
-						
+
 						fmt.Printf("\n🔄 RESUMING TRADING CYCLE...\n")
 						fmt.Printf("🕐 Current time: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-						
+
 						// Restart the entire trading process
 						fmt.Println("\n🚀 RESTARTING CRYPTO TRADING SCANNER...")
-						runTrader()
-						return
+						goto startTrading
 					}
+				} else if aiSignal.Action == "LONG" || aiSignal.Action == "SHORT" {
+					fmt.Printf("⚠️ Confidence %d%% < 85%% - Skipping trade (waiting for better opportunity)\n", aiSignal.Confidence)
+				} else {
+					fmt.Printf("⏸️ AI recommends HOLD - No trade action\n")
 				}
+
+				// Delay between AI calls
+				time.Sleep(2 * time.Second)
 			}
-			
-			// Delay between AI calls
-			time.Sleep(2 * time.Second)
 		}
 	}
-	} else {
-		fmt.Println("\n📊 No breakout signals detected across all scanned symbols")
-		fmt.Println("💡 This could indicate:")
-		fmt.Println("   • Market is in consolidation phase")
-		fmt.Println("   • No clear trends in the scanned timeframe")
-		fmt.Println("   • Wait for better setups to develop")
-	}
+
+	fmt.Println("\n📊 No breakout signals detected across all scanned symbols")
+	fmt.Println("💡 This could indicate:")
+	fmt.Println("   • Market is in consolidation phase")
+	fmt.Println("   • No clear trends in the scanned timeframe")
+	fmt.Println("   • Wait for better setups to develop")
 }
 
 // greetUser returns a personalized greeting
@@ -317,7 +328,7 @@ func displayComprehensiveSummary(signals []*analysis.BreakoutSignal) {
 		typeCount[signal.Type]++
 		totalConfidence += signal.Confidence
 
-		if signal.Confidence >= 0.7 {
+		if signal.Confidence >= 0.85 {
 			highConfidenceSignals++
 		}
 	}
@@ -327,7 +338,7 @@ func displayComprehensiveSummary(signals []*analysis.BreakoutSignal) {
 	fmt.Println("📈 COMPREHENSIVE ANALYSIS:")
 	fmt.Printf("   🎯 Total Signals: %d\n", len(signals))
 	fmt.Printf("   📊 Average Confidence: %.1f%%\n", avgConfidence*100)
-	fmt.Printf("   🔥 High Confidence (≥70%%): %d signals\n", highConfidenceSignals)
+	fmt.Printf("   🔥 High Confidence (≥85%%): %d signals\n", highConfidenceSignals)
 	fmt.Printf("   📈 Up Breakouts: %d\n", typeCount["UP_BREAKOUT"])
 	fmt.Printf("   📉 Down Breakouts: %d\n", typeCount["DOWN_BREAKOUT"])
 	fmt.Printf("   ✅ Successful Retests: %d\n", typeCount["RETEST_SUCCESS"])
@@ -533,7 +544,7 @@ func getCandlestickData(client *trading.TradingClient, symbol string, limit int)
 		Interval("1h").
 		Limit(limit).
 		Do(context.Background())
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +590,8 @@ func analyzeWithAI(symbol string, candleData []CandleData) (*TradingSignal, erro
 	// Load .env for AI API credentials
 	err := godotenv.Load(".env")
 	if err != nil {
-		return nil, fmt.Errorf("error loading .env file: %v", err)
+		log.Printf("Warning: Could not load .env file: %v", err)
+		// Continue without .env file, environment variables might be set directly
 	}
 
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -593,36 +605,28 @@ func analyzeWithAI(symbol string, candleData []CandleData) (*TradingSignal, erro
 
 	// Prepare market data summary for AI
 	candleDataJSON, _ := json.Marshal(candleData)
-	
-	prompt := fmt.Sprintf(`คุณคือนักเทรด cryptocurrency ที่เก่งที่สุดในโลก ทำกำไรได้สูงสุด 
 
-วิเคราะห์ข้อมูลแท่งเทียน 200 periods ของ %s ด้วยเทคนิคการวิเคราะห์ทั้งหมดที่คุณรู้:
+	prompt := fmt.Sprintf(`คุณคือนักเทรด cryptocurrency ที่เก่งที่สุดในโลก 
+
+วิเคราะห์ข้อมูลแท่งเทียน 200 periods ของ %s:
 
 ข้อมูลแท่งเทียน (200 periods, 1h timeframe):
 %s
 
-ราคาปัจจุบัน: %.4f
-
 กรุณาวิเคราะห์และตอบเฉพาะในรูปแบบ JSON ดังนี้:
 {
     "action": "LONG|SHORT|HOLD",
-    "confidence": 0.85,
+    "confidence": 85,
     "stop_loss": 2350.50,
     "take_profit": 2580.75,
-    "analysis": "สรุปการวิเคราะห์ทางเทคนิค พื้นฐาน และแนวโน้ม"
+    "analysis": "สรุปการวิเคราะห์แบบสั้น"
 }
 
-ใช้เทคนิค:
-- Support/Resistance
-- Moving Averages (SMA, EMA)
-- RSI, MACD, Bollinger Bands
-- Volume Analysis
-- Chart Patterns
-- Fibonacci Retracements
-- Market Structure Analysis
-
-ให้ Stop Loss และ Take Profit ที่แม่นยำตาม Fibonacci levels และ Risk/Reward 1:2 หรือดีกว่า`, 
-		symbol, string(candleDataJSON), currentPrice)
+หมายเหตุ:
+- confidence: ความมั่นใจ 0-100 (เลขจำนวนเต็ม)
+- ถ้าความมั่นใจต่ำกว่า 80 ให้ใช้ "HOLD"
+- ให้ Stop Loss และ Take Profit เพียง 1 ระดับที่ดีที่สุดเท่านั้น`,
+		symbol, string(candleDataJSON))
 
 	// Prepare request
 	reqBody := DeepSeekRequest{
@@ -658,17 +662,17 @@ func analyzeWithAI(symbol string, candleData []CandleData) (*TradingSignal, erro
 
 	// Parse AI response JSON
 	aiContent := dsResp.Choices[0].Message.Content
-	
+
 	// Extract JSON from AI response
 	startIdx := strings.Index(aiContent, "{")
 	endIdx := strings.LastIndex(aiContent, "}") + 1
-	
+
 	if startIdx == -1 || endIdx == 0 {
 		return nil, fmt.Errorf("invalid JSON response from AI")
 	}
-	
+
 	jsonResponse := aiContent[startIdx:endIdx]
-	
+
 	// Parse the JSON response
 	var aiSignal TradingSignal
 	if err := json.Unmarshal([]byte(jsonResponse), &aiSignal); err != nil {
@@ -682,13 +686,10 @@ func analyzeWithAI(symbol string, candleData []CandleData) (*TradingSignal, erro
 	return &aiSignal, nil
 }
 
-// displayAIRecommendation shows the AI trading recommendation
+// displayAIRecommendation shows the AI trading recommendation (simplified)
 func displayAIRecommendation(signal *TradingSignal) {
 	fmt.Printf("\n🤖 AI ANALYSIS: %s\n", signal.Symbol)
 	fmt.Println(strings.Repeat("=", 40))
-	fmt.Printf("💰 SYMBOL: %s\n", signal.Symbol)
-	fmt.Printf("💵 Current Price: $%.4f\n", signal.CurrentPrice)
-	fmt.Printf("🎯 Confidence: %.1f%%\n", signal.Confidence*100)
 
 	actionEmoji := "⚡"
 	if signal.Action == "LONG" {
@@ -699,29 +700,15 @@ func displayAIRecommendation(signal *TradingSignal) {
 		actionEmoji = "⏸️"
 	}
 
-	fmt.Printf("\n%s AI RECOMMENDATION: **%s POSITION**\n", actionEmoji, signal.Action)
-	fmt.Printf("📈 Analysis: %s\n", signal.Analysis)
+	fmt.Printf("%s Recommendation: %s\n", actionEmoji, signal.Action)
+	fmt.Printf("🎯 Confidence: %d%%\n", signal.Confidence)
 
 	if signal.Action != "HOLD" {
-		riskReward := math.Abs(signal.TakeProfit-signal.CurrentPrice) / math.Abs(signal.CurrentPrice-signal.StopLoss)
-		fmt.Printf("\n📊 TRADING LEVELS:\n")
-		fmt.Printf("🎯 Take Profit: $%.4f\n", signal.TakeProfit)
-		fmt.Printf("🛑 Stop Loss: $%.4f\n", signal.StopLoss)
-		fmt.Printf("⚖️ Risk/Reward Ratio: 1:%.2f\n", riskReward)
-		
-		if signal.Action == "LONG" {
-			potentialGain := ((signal.TakeProfit - signal.CurrentPrice) / signal.CurrentPrice) * 100
-			potentialLoss := ((signal.CurrentPrice - signal.StopLoss) / signal.CurrentPrice) * 100
-			fmt.Printf("📈 Potential Gain: +%.2f%%\n", potentialGain)
-			fmt.Printf("📉 Potential Loss: -%.2f%%\n", potentialLoss)
-		} else if signal.Action == "SHORT" {
-			potentialGain := ((signal.CurrentPrice - signal.TakeProfit) / signal.CurrentPrice) * 100
-			potentialLoss := ((signal.StopLoss - signal.CurrentPrice) / signal.CurrentPrice) * 100
-			fmt.Printf("📈 Potential Gain: +%.2f%%\n", potentialGain)
-			fmt.Printf("📉 Potential Loss: -%.2f%%\n", potentialLoss)
-		}
+		fmt.Printf("� Take Profit: $%.4f\n", signal.TakeProfit)
+		fmt.Printf("❌ Stop Loss: $%.4f\n", signal.StopLoss)
 	}
 
+	fmt.Printf("📈 Analysis: %s\n", signal.Analysis)
 	fmt.Println()
 }
 
@@ -733,106 +720,62 @@ func min(a, b int) int {
 	return b
 }
 
-// openRealPosition เปิด position จริงด้วย margin $15
+// openRealPosition เปิด position จริงด้วย margin $15 (แบบเรียบง่าย)
 func openRealPosition(client *trading.TradingClient, signal *TradingSignal) error {
 	ctx := context.Background()
-	
+
 	// Calculate position size with $15 margin
 	margin := 15.0
 	leverage := 10.0
 	positionValue := margin * leverage // $150 total position value
 	quantity := positionValue / signal.CurrentPrice
-	
+
 	// Round to reasonable precision (3 decimal places)
 	quantity = math.Floor(quantity*1000) / 1000
-	
-	fmt.Printf("\n🚀 OPENING REAL POSITION:\n")
-	fmt.Printf("├─ Symbol: %s\n", signal.Symbol)
-	fmt.Printf("├─ Action: %s\n", signal.Action)
-	fmt.Printf("├─ Current Price: $%.4f\n", signal.CurrentPrice)
-	fmt.Printf("├─ Margin Used: $%.2f\n", margin)
-	fmt.Printf("├─ Leverage: %.0fx\n", leverage)
-	fmt.Printf("├─ Position Value: $%.2f\n", positionValue)
-	fmt.Printf("├─ Quantity: %.3f %s\n", quantity, strings.Replace(signal.Symbol, "USDT", "", 1))
-	fmt.Printf("├─ Stop Loss: $%.4f\n", signal.StopLoss)
-	fmt.Printf("├─ Take Profit: $%.4f\n", signal.TakeProfit)
-	
-	// Check available balance
-	tradableBalance, err := client.GetTradableBalance(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to check balance: %w", err)
-	}
-	
-	if tradableBalance < margin {
-		fmt.Printf("❌ Insufficient balance: $%.2f available, $%.2f needed\n", tradableBalance, margin)
-		return fmt.Errorf("insufficient balance")
-	}
-	
-	fmt.Printf("✅ Balance check passed: $%.2f available\n", tradableBalance)
-	
+
+	fmt.Printf("\n� Opening Position: %s %s\n", signal.Action, signal.Symbol)
+	fmt.Printf("💰 Margin: $%.0f | Quantity: %.3f\n", margin, quantity)
+
 	// Set up leverage for the symbol
-	fmt.Printf("\n⚙️ Setting up leverage...\n")
 	if err := client.SetLeverage(signal.Symbol, int(leverage)); err != nil {
-		fmt.Printf("⚠️ Warning: Could not set leverage: %v\n", err)
-		// Continue anyway as leverage might already be set
-	} else {
-		fmt.Printf("✅ Leverage set to %.0fx for %s\n", leverage, signal.Symbol)
+		fmt.Printf("⚠️ Leverage setup warning: %v\n", err)
 	}
-	
+
 	// Create the market order
 	side := "BUY"
 	if signal.Action == "SHORT" {
 		side = "SELL"
 	}
-	
-	fmt.Printf("\n📋 CREATING REAL ORDER:\n")
-	fmt.Printf("├─ Side: %s\n", side)
-	fmt.Printf("├─ Type: MARKET\n")
-	fmt.Printf("├─ Quantity: %.3f\n", quantity)
-	fmt.Printf("└─ Estimated Cost: $%.2f margin\n", margin)
-	
-	// Place the market order
-	fmt.Printf("\n🎯 Placing market order...\n")
+
+	// Place the market order (error handling แบบใหม่)
 	orderResponse, err := client.PlaceOrder(ctx, signal.Symbol, side, "MARKET", quantity, 0)
 	if err != nil {
-		fmt.Printf("❌ Failed to place order: %v\n", err)
-		return fmt.Errorf("failed to place order: %w", err)
+		// ถ้า error แสดงแล้วส่งกลับไป ไม่ต้อง panic
+		fmt.Printf("❌ Order failed: %v\n", err)
+		return err
 	}
-	
-	fmt.Printf("✅ ORDER PLACED SUCCESSFULLY!\n")
-	fmt.Printf("├─ Order ID: %s\n", orderResponse.OrderID)
-	fmt.Printf("├─ Status: %s\n", orderResponse.Status)
-	fmt.Printf("├─ Filled Quantity: %.3f\n", orderResponse.ExecutedQty)
-	fmt.Printf("└─ Average Price: $%.4f\n", orderResponse.AvgPrice)
-	
+
+	fmt.Printf("✅ Position opened: %s (ID: %s)\n", signal.Symbol, orderResponse.OrderID)
+
 	// Set Stop Loss and Take Profit orders
-	fmt.Printf("\n�️ Setting up Stop Loss and Take Profit...\n")
-	
-	// Stop Loss Order
 	stopSide := "SELL"
 	if signal.Action == "SHORT" {
 		stopSide = "BUY"
 	}
-	
-	stopOrderResponse, err := client.PlaceStopOrder(ctx, signal.Symbol, stopSide, quantity, signal.StopLoss)
-	if err != nil {
-		fmt.Printf("⚠️ Warning: Could not place stop loss: %v\n", err)
+
+	// Stop Loss
+	if _, err := client.PlaceStopOrder(ctx, signal.Symbol, stopSide, quantity, signal.StopLoss); err != nil {
+		fmt.Printf("⚠️ Stop Loss warning: %v\n", err)
 	} else {
-		fmt.Printf("✅ Stop Loss set at $%.4f (Order ID: %s)\n", signal.StopLoss, stopOrderResponse.OrderID)
+		fmt.Printf("✅ Stop Loss: $%.4f\n", signal.StopLoss)
 	}
-	
-	// Take Profit Order
-	takeProfitOrderResponse, err := client.PlaceTakeProfitOrder(ctx, signal.Symbol, stopSide, quantity, signal.TakeProfit)
-	if err != nil {
-		fmt.Printf("⚠️ Warning: Could not place take profit: %v\n", err)
+
+	// Take Profit
+	if _, err := client.PlaceTakeProfitOrder(ctx, signal.Symbol, stopSide, quantity, signal.TakeProfit); err != nil {
+		fmt.Printf("⚠️ Take Profit warning: %v\n", err)
 	} else {
-		fmt.Printf("✅ Take Profit set at $%.4f (Order ID: %s)\n", signal.TakeProfit, takeProfitOrderResponse.OrderID)
+		fmt.Printf("✅ Take Profit: $%.4f\n", signal.TakeProfit)
 	}
-	
-	fmt.Printf("\n🎉 POSITION OPENED SUCCESSFULLY!\n")
-	fmt.Printf("💰 Total margin used: $%.2f\n", margin)
-	fmt.Printf("📊 Position value: $%.2f\n", positionValue)
-	fmt.Printf("⚖️ Risk management: Stop Loss and Take Profit orders placed\n")
-	
+
 	return nil
 }

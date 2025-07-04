@@ -1,8 +1,10 @@
 package main
 
 import (
+	"log"
 )
 
 func main() {
-	runTrader()
+	log.Println("Starting Professional Breakout Trading System...")
+	StartTrading()
 }

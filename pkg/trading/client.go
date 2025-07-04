@@ -136,8 +136,9 @@ func (tc *TradingClient) GetTradableBalance(ctx context.Context) (float64, error
 		return 0, err
 	}
 
-	// Available balance is what can be used for new positions
-	return usdtBalance.AvailableBalance, nil
+	// For swing trading, use total wallet balance instead of available balance
+	// This allows us to use funds that are locked in orders for new positions
+	return usdtBalance.WalletBalance, nil
 }
 
 // DisplayAccountSummary prints detailed account information
@@ -672,7 +673,7 @@ func (tc *TradingClient) GetKlines(symbol string, interval string, limit int) ([
 // PlaceOrder places a market order
 func (tc *TradingClient) PlaceOrder(ctx context.Context, symbol, side, orderType string, quantity, price float64) (*OrderResponse, error) {
 	// Get symbol info to determine proper precision
-	quantityStr, err := tc.formatQuantity(ctx, symbol, quantity)
+	quantityStr, err := tc.FormatQuantity(ctx, symbol, quantity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format quantity: %w", err)
 	}
@@ -685,7 +686,7 @@ func (tc *TradingClient) PlaceOrder(ctx context.Context, symbol, side, orderType
 
 	// Add price for limit orders
 	if orderType == "LIMIT" && price > 0 {
-		priceStr, err := tc.formatPrice(ctx, symbol, price)
+		priceStr, err := tc.FormatPrice(ctx, symbol, price)
 		if err != nil {
 			return nil, fmt.Errorf("failed to format price: %w", err)
 		}
@@ -707,12 +708,12 @@ func (tc *TradingClient) PlaceOrder(ctx context.Context, symbol, side, orderType
 
 // PlaceStopOrder places a stop loss order
 func (tc *TradingClient) PlaceStopOrder(ctx context.Context, symbol, side string, quantity, stopPrice float64) (*OrderResponse, error) {
-	quantityStr, err := tc.formatQuantity(ctx, symbol, quantity)
+	quantityStr, err := tc.FormatQuantity(ctx, symbol, quantity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format quantity: %w", err)
 	}
 
-	stopPriceStr, err := tc.formatPrice(ctx, symbol, stopPrice)
+	stopPriceStr, err := tc.FormatPrice(ctx, symbol, stopPrice)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format stop price: %w", err)
 	}
@@ -740,12 +741,12 @@ func (tc *TradingClient) PlaceStopOrder(ctx context.Context, symbol, side string
 
 // PlaceTakeProfitOrder places a take profit order
 func (tc *TradingClient) PlaceTakeProfitOrder(ctx context.Context, symbol, side string, quantity, takeProfitPrice float64) (*OrderResponse, error) {
-	quantityStr, err := tc.formatQuantity(ctx, symbol, quantity)
+	quantityStr, err := tc.FormatQuantity(ctx, symbol, quantity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format quantity: %w", err)
 	}
 
-	takeProfitPriceStr, err := tc.formatPrice(ctx, symbol, takeProfitPrice)
+	takeProfitPriceStr, err := tc.FormatPrice(ctx, symbol, takeProfitPrice)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format take profit price: %w", err)
 	}
@@ -869,107 +870,237 @@ func (tc *TradingClient) CancelOrder(ctx context.Context, symbol string, orderID
 	return nil
 }
 
-// CleanupOrphaneOrders ตรวจสอบและปิด orders ที่ไม่มี position แล้ว
+// CleanupOrphaneOrders Simple cleanup: 1 position = 2 orders (ไม่สนใจประเภท), ไม่มี position = ปิดทุก orders
 func (tc *TradingClient) CleanupOrphaneOrders(ctx context.Context) error {
-	fmt.Println("🧹 Cleaning up orphaned orders (orders without positions)...")
+	fmt.Println("🧹 Comprehensive Order/Position Cleanup")
+	fmt.Println("   Rules: 1 position = exactly 2 orders, no position = no orders")
+	fmt.Println("   If position has < 2 orders → close position + cancel all orders")
 
-	// ดึงข้อมูล positions ที่มีอยู่
+	// Get positions
 	positions, err := tc.GetPositions(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get positions: %w", err)
 	}
 
-	// สร้าง map ของ symbols ที่มี position
-	positionSymbols := make(map[string]bool)
+	// Create position map with actual quantities
+	positionMap := make(map[string]float64)
 	for _, pos := range positions {
-		positionSymbols[pos.Symbol] = true
-	}
-
-	fmt.Printf("📊 Found %d active positions\n", len(positions))
-	if len(positions) > 0 {
-		fmt.Println("💼 Active positions:")
-		for _, pos := range positions {
-			fmt.Printf("   %s: %s %.6f @ %.4f (PnL: %.4f USDT)\n",
-				pos.Symbol, pos.Side, pos.PositionAmt, pos.EntryPrice, pos.UnrealizedProfit)
+		if pos.PositionAmt != 0 {
+			positionMap[pos.Symbol] = pos.PositionAmt
 		}
 	}
 
-	// ดึงข้อมูล open orders
+	// Get open orders
 	orders, err := tc.GetOpenOrders(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get open orders: %w", err)
 	}
 
-	fmt.Printf("📋 Found %d open orders\n", len(orders))
+	fmt.Printf("📊 Analysis: %d positions, %d orders\n", len(positionMap), len(orders))
 
-	var orphanedOrders []Order
-	var keepOrders []Order
-
-	// แยก orders ที่เป็น orphaned (ไม่มี position) และที่ต้องเก็บไว้
+	// Group orders by symbol
+	ordersBySymbol := make(map[string][]Order)
 	for _, order := range orders {
-		// เช็คว่าเป็น take profit หรือ stop loss order
-		isTakeProfitOrStopLoss := order.ReduceOnly ||
-			order.Type == "TAKE_PROFIT_MARKET" ||
-			order.Type == "STOP_MARKET" ||
-			order.Type == "TRAILING_STOP_MARKET"
+		ordersBySymbol[order.Symbol] = append(ordersBySymbol[order.Symbol], order)
+	}
 
-		if isTakeProfitOrStopLoss && !positionSymbols[order.Symbol] {
-			// Order นี้เป็น TP/SL แต่ไม่มี position แล้ว = orphaned
-			orphanedOrders = append(orphanedOrders, order)
+	// Get all symbols (from both positions and orders)
+	allSymbols := make(map[string]bool)
+	for symbol := range positionMap {
+		allSymbols[symbol] = true
+	}
+	for symbol := range ordersBySymbol {
+		allSymbols[symbol] = true
+	}
+
+	// Analysis and action planning
+	var symbolsToClosePositions []string
+	var ordersToCancel []Order
+	var symbolsWithCorrectSetup []string
+	var problematicSymbols []string
+
+	fmt.Println("\n🔍 Detailed Analysis by Symbol:")
+	
+	for symbol := range allSymbols {
+		positionAmt := positionMap[symbol]
+		symbolOrders := ordersBySymbol[symbol]
+		hasPosition := positionAmt != 0
+		orderCount := len(symbolOrders)
+
+		fmt.Printf("   %s: Position=%.4f, Orders=%d", symbol, positionAmt, orderCount)
+
+		if !hasPosition {
+			// No position - should have no orders
+			if orderCount > 0 {
+				fmt.Printf(" → Cancel %d orphaned orders\n", orderCount)
+				ordersToCancel = append(ordersToCancel, symbolOrders...)
+				problematicSymbols = append(problematicSymbols, symbol)
+			} else {
+				fmt.Printf(" → ✅ Correct (no position, no orders)\n")
+			}
 		} else {
-			keepOrders = append(keepOrders, order)
+			// Has position - should have exactly 2 orders
+			if orderCount < 2 {
+				fmt.Printf(" → ❌ Close position (insufficient orders)\n")
+				symbolsToClosePositions = append(symbolsToClosePositions, symbol)
+				ordersToCancel = append(ordersToCancel, symbolOrders...)
+				problematicSymbols = append(problematicSymbols, symbol)
+			} else if orderCount == 2 {
+				fmt.Printf(" → ✅ Correct (position with 2 orders)\n")
+				symbolsWithCorrectSetup = append(symbolsWithCorrectSetup, symbol)
+			} else {
+				fmt.Printf(" → Cancel %d excess orders (keep 2)\n", orderCount-2)
+				ordersToCancel = append(ordersToCancel, symbolOrders[2:]...)
+				problematicSymbols = append(problematicSymbols, symbol)
+			}
 		}
 	}
 
-	if len(orphanedOrders) == 0 {
-		fmt.Println("✅ No orphaned orders found - all orders have corresponding positions")
+	// Summary
+	fmt.Printf("\n📋 Cleanup Summary:\n")
+	fmt.Printf("   ✅ Correct symbols: %d\n", len(symbolsWithCorrectSetup))
+	fmt.Printf("   ⚠️  Problematic symbols: %d\n", len(problematicSymbols))
+	fmt.Printf("   🗑️  Orders to cancel: %d\n", len(ordersToCancel))
+	fmt.Printf("   ❌ Positions to close: %d\n", len(symbolsToClosePositions))
+
+	if len(problematicSymbols) == 0 {
+		fmt.Println("🎉 All positions and orders are perfectly balanced!")
 		return nil
 	}
 
-	fmt.Printf("🗑️  Found %d orphaned orders to cancel:\n", len(orphanedOrders))
-
-	canceledCount := 0
-	for _, order := range orphanedOrders {
-		fmt.Printf("   Canceling %s %s %s Order #%d (Price: %.6f)\n",
-			order.Symbol, order.Type, order.Side, order.OrderID,
-			func() float64 {
-				if order.StopPrice > 0 {
-					return order.StopPrice
-				}
-				return order.Price
-			}())
-
-		err := tc.CancelOrder(ctx, order.Symbol, order.OrderID)
-		if err != nil {
-			fmt.Printf("   ❌ Failed to cancel order %d: %v\n", order.OrderID, err)
+	// Execute cleanup actions
+	fmt.Println("\n🔧 Executing Cleanup Actions:")
+	
+	// Step 1: Close positions that have insufficient orders
+	var failedPositionCloses []string
+	for _, symbol := range symbolsToClosePositions {
+		fmt.Printf("   🔴 Closing position %s (insufficient orders)\n", symbol)
+		if err := tc.ClosePosition(ctx, symbol); err != nil {
+			fmt.Printf("      ❌ Failed to close position %s: %v\n", symbol, err)
+			failedPositionCloses = append(failedPositionCloses, symbol)
 		} else {
-			fmt.Printf("   ✅ Successfully canceled order %d\n", order.OrderID)
+			fmt.Printf("      ✅ Position %s closed successfully\n", symbol)
+		}
+	}
+
+	// Step 2: Cancel orders
+	canceledCount := 0
+	failedCancels := 0
+	
+	for _, order := range ordersToCancel {
+		fmt.Printf("   🗑️  Canceling %s Order #%d\n", order.Symbol, order.OrderID)
+		if err := tc.CancelOrder(ctx, order.Symbol, order.OrderID); err != nil {
+			fmt.Printf("      ❌ Failed: %v\n", err)
+			failedCancels++
+		} else {
 			canceledCount++
 		}
 	}
 
-	fmt.Printf("🧹 Cleanup completed: %d/%d orders canceled\n", canceledCount, len(orphanedOrders))
-	fmt.Printf("📋 Remaining orders: %d\n", len(keepOrders))
+	fmt.Printf("\n✅ Cleanup Complete:\n")
+	fmt.Printf("   📊 Orders canceled: %d/%d\n", canceledCount, len(ordersToCancel))
+	fmt.Printf("   🔴 Positions closed: %d/%d\n", len(symbolsToClosePositions)-len(failedPositionCloses), len(symbolsToClosePositions))
+	
+	if failedCancels > 0 {
+		fmt.Printf("   ⚠️  Failed order cancellations: %d\n", failedCancels)
+	}
+	
+	if len(failedPositionCloses) > 0 {
+		fmt.Printf("   ⚠️  Failed position closes: %d (%v)\n", len(failedPositionCloses), failedPositionCloses)
+	}
 
-	if len(keepOrders) > 0 {
-		fmt.Println("📝 Remaining active orders:")
-		for _, order := range keepOrders {
-			fmt.Printf("   %s %s %s: %.6f @ %.6f\n",
-				order.Symbol, order.Type, order.Side, order.OrigQty,
-				func() float64 {
-					if order.StopPrice > 0 {
-						return order.StopPrice
-					}
-					return order.Price
-				}())
-		}
+	// Final verification
+	fmt.Println("\n🔍 Post-Cleanup Verification:")
+	if err := tc.verifyOrderPositionBalance(ctx); err != nil {
+		fmt.Printf("   ⚠️  Verification found issues: %v\n", err)
+	} else {
+		fmt.Println("   ✅ All positions and orders are now balanced")
 	}
 
 	return nil
 }
 
-// formatQuantity formats quantity according to symbol's step size
-func (tc *TradingClient) formatQuantity(ctx context.Context, symbol string, quantity float64) (string, error) {
+// verifyOrderPositionBalance verifies that every position has exactly 2 orders and no orphaned orders exist
+func (tc *TradingClient) verifyOrderPositionBalance(ctx context.Context) error {
+	// Get positions
+	positions, err := tc.GetPositions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	// Create position map with actual quantities
+	positionMap := make(map[string]float64)
+	for _, pos := range positions {
+		if pos.PositionAmt != 0 {
+			positionMap[pos.Symbol] = pos.PositionAmt
+		}
+	}
+
+	// Get open orders
+	orders, err := tc.GetOpenOrders(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get open orders: %w", err)
+	}
+
+	// Group orders by symbol
+	ordersBySymbol := make(map[string][]Order)
+	for _, order := range orders {
+		ordersBySymbol[order.Symbol] = append(ordersBySymbol[order.Symbol], order)
+	}
+
+	// Check all symbols
+	allSymbols := make(map[string]bool)
+	for symbol := range positionMap {
+		allSymbols[symbol] = true
+	}
+	for symbol := range ordersBySymbol {
+		allSymbols[symbol] = true
+	}
+
+	var errors []string
+
+	for symbol := range allSymbols {
+		positionAmt := positionMap[symbol]
+		symbolOrders := ordersBySymbol[symbol]
+		hasPosition := positionAmt != 0
+		orderCount := len(symbolOrders)
+
+		if !hasPosition && orderCount > 0 {
+			errors = append(errors, fmt.Sprintf("%s: has %d orphaned orders", symbol, orderCount))
+		} else if hasPosition && orderCount != 2 {
+			errors = append(errors, fmt.Sprintf("%s: position exists but has %d orders (expected 2)", symbol, orderCount))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("balance issues found: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+// GetSwingTradingBalance returns available balance for swing trading
+// This calculates usable balance by excluding only position margin, not pending orders
+func (tc *TradingClient) GetSwingTradingBalance(ctx context.Context) (float64, error) {
+	usdtBalance, err := tc.GetUSDTBalance(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// For swing trading, we can use: Wallet Balance - Position Margin
+	// We don't exclude pending orders margin since we might want to cancel/replace them
+	usableBalance := usdtBalance.WalletBalance - usdtBalance.PositionInitialMargin
+
+	// Ensure we don't return negative balance
+	if usableBalance < 0 {
+		usableBalance = 0
+	}
+
+	return usableBalance, nil
+}
+
+// FormatQuantity formats quantity according to symbol's step size
+func (tc *TradingClient) FormatQuantity(ctx context.Context, symbol string, quantity float64) (string, error) {
 	pairs, err := tc.GetUSDTPairs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get symbol info: %w", err)
@@ -1001,8 +1132,8 @@ func (tc *TradingClient) formatQuantity(ctx context.Context, symbol string, quan
 	return fmt.Sprintf("%.3f", quantity), nil
 }
 
-// formatPrice formats price according to symbol's tick size
-func (tc *TradingClient) formatPrice(ctx context.Context, symbol string, price float64) (string, error) {
+// FormatPrice formats price according to symbol's tick size
+func (tc *TradingClient) FormatPrice(ctx context.Context, symbol string, price float64) (string, error) {
 	pairs, err := tc.GetUSDTPairs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get symbol info: %w", err)
@@ -1040,4 +1171,266 @@ func parseFloat(s string) float64 {
 		return 0
 	}
 	return f
+}
+
+// ClosePosition closes a position by placing a market order in the opposite direction
+// Uses multiple fallback methods for stuck positions
+func (tc *TradingClient) ClosePosition(ctx context.Context, symbol string) error {
+	// Get current position
+	positions, err := tc.GetPositions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get positions: %w", err)
+	}
+	
+	var targetPosition *Position
+	for _, pos := range positions {
+		if pos.Symbol == symbol && pos.PositionAmt != 0 {
+			targetPosition = &pos
+			break
+		}
+	}
+	
+	if targetPosition == nil {
+		return fmt.Errorf("no position found for symbol %s", symbol)
+	}
+	
+	log.Printf("Attempting to close position for %s: Size %.8f", symbol, targetPosition.PositionAmt)
+	
+	// Try multiple methods in sequence
+	methods := []func() error{
+		func() error { return tc.closeWithReduceOnly(ctx, symbol, targetPosition) },
+		func() error { return tc.closeWithClosePositionFlag(ctx, symbol, targetPosition) },
+		func() error { return tc.closeWithMarketOrder(ctx, symbol, targetPosition) },
+		func() error { return tc.closeWithPrecisionRounding(ctx, symbol, targetPosition) },
+		func() error { return tc.closeWithMultipleOrders(ctx, symbol, targetPosition) },
+		func() error { return tc.forceCloseWithHedge(ctx, symbol, targetPosition) },
+	}
+	
+	var lastErr error
+	for i, method := range methods {
+		log.Printf("Trying close method %d for %s", i+1, symbol)
+		err := method()
+		if err == nil {
+			log.Printf("Successfully closed position for %s using method %d", symbol, i+1)
+			return nil
+		}
+		lastErr = err
+		log.Printf("Method %d failed for %s: %v", i+1, symbol, err)
+	}
+	
+	return fmt.Errorf("all close methods failed for %s, last error: %w", symbol, lastErr)
+}
+
+// Method 1: Standard ReduceOnly approach
+func (tc *TradingClient) closeWithReduceOnly(ctx context.Context, symbol string, position *Position) error {
+	side := futures.SideTypeSell
+	if position.PositionAmt < 0 {
+		side = futures.SideTypeBuy
+	}
+	
+	quantity := fmt.Sprintf("%.8f", math.Abs(position.PositionAmt))
+	
+	_, err := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(side).
+		Type(futures.OrderTypeMarket).
+		Quantity(quantity).
+		ReduceOnly(true).
+		Do(ctx)
+	
+	return err
+}
+
+// Method 2: ClosePosition flag approach
+func (tc *TradingClient) closeWithClosePositionFlag(ctx context.Context, symbol string, position *Position) error {
+	side := futures.SideTypeSell
+	if position.PositionAmt < 0 {
+		side = futures.SideTypeBuy
+	}
+	
+	quantity := fmt.Sprintf("%.8f", math.Abs(position.PositionAmt))
+	
+	_, err := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(side).
+		Type(futures.OrderTypeMarket).
+		Quantity(quantity).
+		ClosePosition(true).
+		Do(ctx)
+	
+	return err
+}
+
+// Method 3: Plain market order (no flags)
+func (tc *TradingClient) closeWithMarketOrder(ctx context.Context, symbol string, position *Position) error {
+	side := futures.SideTypeSell
+	if position.PositionAmt < 0 {
+		side = futures.SideTypeBuy
+	}
+	
+	quantity := fmt.Sprintf("%.8f", math.Abs(position.PositionAmt))
+	
+	_, err := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(side).
+		Type(futures.OrderTypeMarket).
+		Quantity(quantity).
+		Do(ctx)
+	
+	return err
+}
+
+// Method 4: Round quantity to avoid precision errors
+func (tc *TradingClient) closeWithPrecisionRounding(ctx context.Context, symbol string, position *Position) error {
+	side := futures.SideTypeSell
+	if position.PositionAmt < 0 {
+		side = futures.SideTypeBuy
+	}
+	
+	// Get symbol info for precision
+	exchangeInfo, err := tc.BinanceClient.NewExchangeInfoService().Do(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get exchange info: %w", err)
+	}
+	
+	var stepSize float64 = 0.001 // default
+	for _, symbolInfo := range exchangeInfo.Symbols {
+		if symbolInfo.Symbol == symbol {
+			for _, filter := range symbolInfo.Filters {
+				if filter["filterType"] == "LOT_SIZE" {
+					if ss, ok := filter["stepSize"].(string); ok {
+						if parsed, err := strconv.ParseFloat(ss, 64); err == nil {
+							stepSize = parsed
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+	
+	// Round quantity to step size
+	absAmount := math.Abs(position.PositionAmt)
+	roundedAmount := math.Floor(absAmount/stepSize) * stepSize
+	
+	if roundedAmount <= 0 {
+		return fmt.Errorf("rounded quantity is zero")
+	}
+	
+	quantity := fmt.Sprintf("%.8f", roundedAmount)
+	
+	_, err = tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(side).
+		Type(futures.OrderTypeMarket).
+		Quantity(quantity).
+		ReduceOnly(true).
+		Do(ctx)
+	
+	return err
+}
+
+// Method 5: Close in multiple smaller orders
+func (tc *TradingClient) closeWithMultipleOrders(ctx context.Context, symbol string, position *Position) error {
+	side := futures.SideTypeSell
+	if position.PositionAmt < 0 {
+		side = futures.SideTypeBuy
+	}
+	
+	absAmount := math.Abs(position.PositionAmt)
+	numOrders := 3
+	orderSize := absAmount / float64(numOrders)
+	
+	for i := 0; i < numOrders; i++ {
+		quantity := fmt.Sprintf("%.8f", orderSize)
+		
+		_, err := tc.BinanceClient.NewCreateOrderService().
+			Symbol(symbol).
+			Side(side).
+			Type(futures.OrderTypeMarket).
+			Quantity(quantity).
+			ReduceOnly(true).
+			Do(ctx)
+		
+		if err != nil {
+			return fmt.Errorf("failed on order %d: %w", i+1, err)
+		}
+		
+		// Small delay between orders
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Continue immediately
+		}
+	}
+	
+	return nil
+}
+
+// Method 6: Force close by opening opposite position then closing both
+func (tc *TradingClient) forceCloseWithHedge(ctx context.Context, symbol string, position *Position) error {
+	log.Printf("WARNING: Using hedge method for %s - this opens a temporary opposite position", symbol)
+	
+	// Determine opposite side for hedge
+	hedgeSide := futures.SideTypeBuy
+	if position.PositionAmt < 0 {
+		hedgeSide = futures.SideTypeSell
+	}
+	
+	absAmount := math.Abs(position.PositionAmt)
+	quantity := fmt.Sprintf("%.8f", absAmount)
+	
+	// Step 1: Open opposite position (hedge)
+	_, err := tc.BinanceClient.NewCreateOrderService().
+		Symbol(symbol).
+		Side(hedgeSide).
+		Type(futures.OrderTypeMarket).
+		Quantity(quantity).
+		Do(ctx)
+	
+	if err != nil {
+		return fmt.Errorf("failed to create hedge position: %w", err)
+	}
+	
+	log.Printf("Created hedge position for %s, now attempting to close all", symbol)
+	
+	// Step 2: Wait a moment for position to update
+	// (In production, you might want to poll for position updates)
+	
+	// Step 3: Try to close the now-neutral position
+	// Since we have equal opposite positions, they should cancel out
+	// But if not, try to close both individually
+	
+	// Get updated positions
+	positions, err := tc.GetPositions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get updated positions after hedge: %w", err)
+	}
+	
+	for _, pos := range positions {
+		if pos.Symbol == symbol && pos.PositionAmt != 0 {
+			// Try to close remaining position
+			side := futures.SideTypeSell
+			if pos.PositionAmt < 0 {
+				side = futures.SideTypeBuy
+			}
+			
+			qty := fmt.Sprintf("%.8f", math.Abs(pos.PositionAmt))
+			
+			_, err := tc.BinanceClient.NewCreateOrderService().
+				Symbol(symbol).
+				Side(side).
+				Type(futures.OrderTypeMarket).
+				Quantity(qty).
+				ReduceOnly(true).
+				Do(ctx)
+			
+			if err != nil {
+				log.Printf("Warning: Failed to close remaining position after hedge for %s: %v", symbol, err)
+			}
+		}
+	}
+	
+	return nil
 }

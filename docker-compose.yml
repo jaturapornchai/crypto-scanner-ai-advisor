@@ -1,21 +1,27 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  tread2:
-    build: .
-    image: tread2:latest
-    container_name: tread2-scanner
+  getspot:
+    image: jaturapornchai/getspot:latest
+    container_name: getspot
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      - TZ=Asia/Bangkok
+      - OPENBLAS_NUM_THREADS=1
+      - OPENBLAS_MAIN_FREE=1
+      - OMP_NUM_THREADS=1
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
     volumes:
-      - ./logs:/root/logs
-      - ./.env:/root/.env:ro
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - crypto-network
+      - crypto_network
 
 networks:
-  crypto-network:
+  crypto_network:
     driver: bridge

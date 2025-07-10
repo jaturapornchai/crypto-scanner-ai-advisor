@@ -1,6 +1,7 @@
 """
 Enhanced Position & Order Manager with Linear Regression Channel Integration
 ระบบจัดการ positions และ orders ที่ใช้ Linear Regression Channel detection เท่านั้น
+พร้อม Advanced Historical Data Management
 """
 
 import time
@@ -14,7 +15,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from linear_regression_detector import LinearRegressionChannelDetector
+    from linear_regression_detector import LinearRegressionChannelDetector, OHLCV
     LRC_DETECTOR_AVAILABLE = True
     print("✅ Linear Regression Channel Detector imported successfully")
 except ImportError as e:
@@ -40,6 +41,20 @@ except Exception as e:
     print("🔄 Using fallback percentage TP/SL")
     SMART_TP_SL_AVAILABLE = False
 
+# Import Advanced Historical Data Manager
+try:
+    from advanced_historical_data_manager import AdvancedHistoricalDataManager
+    ADVANCED_DATA_MANAGER_AVAILABLE = True
+    print("✅ Advanced Historical Data Manager imported successfully")
+except ImportError as e:
+    print(f"⚠️ Advanced Data Manager import error: {e}")
+    print("🔄 Using direct API calls")
+    ADVANCED_DATA_MANAGER_AVAILABLE = False
+except Exception as e:
+    print(f"⚠️ Advanced Data Manager error: {e}")
+    print("🔄 Using direct API calls")
+    ADVANCED_DATA_MANAGER_AVAILABLE = False
+
 class EnhancedPositionManager:
     def __init__(self, exchange_client):
         """Initialize with exchange client"""
@@ -48,6 +63,14 @@ class EnhancedPositionManager:
         
         # Initialize AI Analyzer without Historical Data Manager
         self.ai_analyzer = AIAnalyzer(None)  # ไม่ส่ง exchange เพื่อไม่ให้สร้าง data manager
+        
+        # Initialize Advanced Historical Data Manager
+        if ADVANCED_DATA_MANAGER_AVAILABLE:
+            self.historical_data_manager = AdvancedHistoricalDataManager(exchange_client)
+            print("📊 Advanced Historical Data Manager พร้อมใช้งาน")
+        else:
+            self.historical_data_manager = None
+            print("⚠️ ใช้ Direct API calls แทน Historical Data Manager")
         
         # Initialize Linear Regression Channel Detector for filtering
         if LRC_DETECTOR_AVAILABLE:
@@ -216,12 +239,65 @@ class EnhancedPositionManager:
     
     # LOOP2 Methods
     def get_ohlcv_data(self, symbol, timeframe='1h', limit=200):
-        """ดึงข้อมูล OHLCV ย้อนหลัง"""
+        """
+        ดึงข้อมูล OHLCV ย้อนหลัง - ใช้ Advanced Historical Data Manager
+        
+        ขั้นตอน:
+        1. ตรวจสอบ historical_data_manager
+        2. ถ้ามี -> ใช้ระบบ cache + auto update
+        3. ถ้าไม่มี -> ใช้ direct API calls (fallback)
+        """
+        # ใช้ Advanced Historical Data Manager ถ้ามี
+        if self.historical_data_manager and timeframe == '1h':
+            try:
+                print(f"    📊 ใช้ Advanced Historical Data Manager...")
+                ohlcv_data = self.historical_data_manager.get_updated_historical_data(symbol)
+                
+                if ohlcv_data and len(ohlcv_data) >= limit:
+                    # ตัดข้อมูลให้ตรงกับ limit ที่ต้องการ
+                    final_data = ohlcv_data[-limit:] if len(ohlcv_data) > limit else ohlcv_data
+                    print(f"    ✅ ได้ข้อมูลจาก Cache: {len(final_data)} records")
+                    return final_data
+                else:
+                    print(f"    ⚠️ ข้อมูลจาก Cache ไม่เพียงพอ -> ใช้ Direct API")
+                    
+            except Exception as e:
+                print(f"    ⚠️ ข้อผิดพลาด Historical Data Manager: {e} -> ใช้ Direct API")
+        
+        # Fallback: ใช้ Direct API calls
         try:
+            print(f"    📊 ใช้ Direct API calls...")
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            if ohlcv:
+                print(f"    ✅ ได้ข้อมูลจาก API: {len(ohlcv)} records")
             return ohlcv
         except Exception as e:
-            print(f"❌ ไม่สามารถดึงข้อมูล OHLCV สำหรับ {symbol}: {e}")
+            print(f"    ❌ ไม่สามารถดึงข้อมูล OHLCV สำหรับ {symbol}: {e}")
+            return None
+    
+    def convert_ohlcv_to_detector_format(self, ohlcv_data):
+        """แปลงข้อมูล OHLCV ให้เป็น format ที่ LRC detector ใช้ได้"""
+        if not ohlcv_data or not LRC_DETECTOR_AVAILABLE:
+            return None
+        
+        try:
+            detector_data = []
+            for candle in ohlcv_data:
+                # candle format: [timestamp, open, high, low, close, volume]
+                ohlcv_obj = OHLCV(
+                    timestamp=int(candle[0]),
+                    open=float(candle[1]),
+                    high=float(candle[2]),
+                    low=float(candle[3]),
+                    close=float(candle[4]),
+                    volume=float(candle[5])
+                )
+                detector_data.append(ohlcv_obj)
+            
+            return detector_data
+            
+        except Exception as e:
+            print(f"    ❌ ไม่สามารถแปลง OHLCV format: {e}")
             return None
     
     def check_available_balance(self):
@@ -365,148 +441,50 @@ class EnhancedPositionManager:
                 return False, 'other_error'
     
     def check_trading_signals(self, symbol):
-        """ตรวจสอบสัญญาณการเทรด - เทรดตามเทรนด์ (ไม่เอาจุดกลับตัว)"""
+        """ตรวจสอบสัญญาณการเทรด - ใช้ LRC + Channel Price Validation เท่านั้น"""
         try:
-            # ดึงข้อมูล OHLCV สำหรับการคำนวณ indicators
+            # ดึงข้อมูล OHLCV สำหรับ LRC analysis
             ohlcv = self.get_ohlcv_data(symbol, limit=144)
-            if not ohlcv or len(ohlcv) < 50:
+            if not ohlcv or len(ohlcv) < 100:
                 print(f"        ❌ ข้อมูล OHLCV ไม่เพียงพอ ({len(ohlcv) if ohlcv else 0} candles)")
                 return False
             
-            # แปลงข้อมูลเป็น lists
-            closes = [candle[4] for candle in ohlcv]
-            highs = [candle[2] for candle in ohlcv]
-            lows = [candle[3] for candle in ohlcv]
-            volumes = [candle[5] for candle in ohlcv]
-            
-            # คำนวณ indicators สำหรับเทรดตามเทรนด์
-            ema_20 = self.calculate_ema(closes, 20)
-            ema_50 = self.calculate_ema(closes, 50)
-            ema_100 = self.calculate_ema(closes, 100)
-            rsi = self.calculate_rsi(closes)
-            macd_line, signal_line = self.calculate_macd_simple(closes)
-            
-            current_price = closes[-1]
-            current_volume = volumes[-1]
-            avg_volume = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else current_volume
-            
-            # เทรดตามเทรนด์ - Trend Following Strategy
-            # 1. ระบุเทรนด์ที่ชัดเจน
-            strong_uptrend = (ema_20 > ema_50 > ema_100 and 
-                             current_price > ema_20 and 
-                             current_price > closes[-2])  # ราคาเพิ่มขึ้น
-            
-            strong_downtrend = (ema_20 < ema_50 < ema_100 and 
-                               current_price < ema_20 and 
-                               current_price < closes[-2])  # ราคาลดลง
-            
-            # 2. ยืนยันเทรนด์ด้วย RSI และ MACD
-            bullish_momentum = (rsi > 50 and rsi < 80 and  # RSI ในเขตบวกแต่ยังไม่ overbought
-                               macd_line > signal_line and macd_line > 0)  # MACD บวกและเหนือ signal
-            
-            bearish_momentum = (rsi < 50 and rsi > 20 and  # RSI ในเขตลบแต่ยังไม่ oversold
-                               macd_line < signal_line and macd_line < 0)  # MACD ลบและใต้ signal
-            
-            # 3. ยืนยันด้วย volume
-            volume_confirmation = current_volume > avg_volume * 1.1  # volume เพิ่มขึ้น
-            
-            # สัญญาณเทรดตามเทรนด์
-            # Long Signal: เทรนด์ขึ้นแรง + momentum บวก + volume สนับสนุน
-            trend_long_signal = (strong_uptrend and 
-                                bullish_momentum and 
-                                volume_confirmation)
-            
-            # Short Signal: เทรนด์ลงแรง + momentum ลบ + volume สนับสนุน
-            trend_short_signal = (strong_downtrend and 
-                                 bearish_momentum and 
-                                 volume_confirmation)
-            
-            # แสดงรายละเอียด
-            print(f"        📊 Price: {current_price:.6f}")
-            print(f"        📊 EMA20: {ema_20:.6f}, EMA50: {ema_50:.6f}, EMA100: {ema_100:.6f}")
-            print(f"        📊 RSI: {rsi:.1f}, MACD: {macd_line:.6f}, Volume: {current_volume/avg_volume:.1f}x")
-            
-            # ระบุเทรนด์
-            if strong_uptrend:
-                trend_type = "STRONG_UPTREND"
-            elif strong_downtrend:
-                trend_type = "STRONG_DOWNTREND"
+            # ใช้ LRC detector เพื่อตรวจสอบ channel breakout + price validation
+            has_signal = False
+            if self.lrc_detector_class:
+                try:
+                    # Convert OHLCV data for LRC detector
+                    ohlc_objects = self.convert_ohlcv_to_detector_format(ohlcv)
+                    
+                    if ohlc_objects:
+                        # Create LRC detector and analyze
+                        lrc_detector = self.lrc_detector_class(ohlc_objects, length=100, deviation=2.0)
+                        lrc_result = lrc_detector.detect_breakout_with_channel_price_check(max_lookback=5)
+                        
+                        if lrc_result.is_fresh_breakout and lrc_result.signal != 'NEUTRAL':
+                            print(f"        ✅ พบสัญญาณ LRC + Channel Price: {lrc_result.signal}")
+                            print(f"        📊 Pattern: {lrc_result.pattern_type}")
+                            print(f"        📊 Confidence: {lrc_result.confidence:.1f}%")
+                            print(f"        📊 Entry: {lrc_result.entry_level:.6f}")
+                            print(f"        📊 Stop Loss: {lrc_result.stop_loss:.6f}")
+                            
+                            self.last_signal_type = lrc_result.signal
+                            has_signal = True
+                        else:
+                            print(f"        ⚠️ ไม่ผ่านเงื่อนไข LRC + Channel Price")
+                            print(f"        📊 Reason: {lrc_result.description}")
+                    else:
+                        print(f"        ❌ ไม่สามารถแปลงข้อมูล OHLCV")
+                        
+                except Exception as e:
+                    print(f"        ❌ ข้อผิดพลาด LRC detector: {e}")
             else:
-                trend_type = "SIDEWAYS"
+                print(f"        ❌ LRC detector ไม่พร้อมใช้งาน")
             
-            print(f"        📊 Trend: {trend_type}")
-            
-            has_trend_signal = trend_long_signal or trend_short_signal
-            signal_type = "LONG" if trend_long_signal else "SHORT" if trend_short_signal else "NONE"
-            
-            if has_trend_signal:
-                print(f"        ✅ พบสัญญาณเทรดตามเทรนด์: {signal_type}")
-                self.last_signal_type = signal_type
-            else:
-                print(f"        ⚠️  ไม่พบสัญญาณเทรดตามเทรนด์")
-            
-            return has_trend_signal
+            return has_signal
             
         except Exception as e:
-            print(f"        ❌ ไม่สามารถตรวจสอบสัญญาณเทรดตามเทรนด์สำหรับ {symbol}: {e}")
-            return False
-        try:
-            # ดึงข้อมูล OHLCV สำหรับการคำนวณ RSI divergence
-            ohlcv = self.get_ohlcv_data(symbol, limit=144)  # ใช้ 144 candles สำหรับ divergence
-            if not ohlcv or len(ohlcv) < 50:
-                print(f"        ❌ ข้อมูล OHLCV ไม่เพียงพอ ({len(ohlcv) if ohlcv else 0} candles)")
-                return False
-            
-            # แปลงข้อมูลเป็น lists
-            closes = [candle[4] for candle in ohlcv]  # close prices
-            highs = [candle[2] for candle in ohlcv]   # high prices
-            lows = [candle[3] for candle in ohlcv]    # low prices
-            
-            # คำนวณ RSI สำหรับทุก candle ที่เป็นไปได้
-            rsi_values = []
-            for i in range(14, len(closes)):
-                rsi = self.calculate_rsi(closes[:i+1])
-                rsi_values.append(rsi)
-            
-            # หา divergence (ต้องมีอย่างน้อย 20 RSI values)
-            if len(rsi_values) < 20:
-                print(f"        ❌ RSI values ไม่เพียงพอสำหรับ divergence")
-                return False
-            
-            # ตรวจสอบ Bullish Divergence (ราคาทำ lower low แต่ RSI ทำ higher low)
-            bullish_divergence = self.check_bullish_divergence(lows[-50:], rsi_values[-36:])
-            
-            # ตรวจสอบ Bearish Divergence (ราคาทำ higher high แต่ RSI ทำ lower high)
-            bearish_divergence = self.check_bearish_divergence(highs[-50:], rsi_values[-36:])
-            
-            current_price = closes[-1]
-            current_rsi = rsi_values[-1]
-            
-            # แสดงรายละเอียด
-            print(f"        📊 ราคาปัจจุบัน: {current_price:.6f}, RSI: {current_rsi:.1f}")
-            
-            divergence_found = False
-            divergence_type = None
-            
-            if bullish_divergence:
-                print(f"        🟢 พบ Bullish Divergence (ราคา↓ RSI↑) - สัญญาณซื้อ")
-                divergence_found = True
-                divergence_type = "BULLISH"
-            elif bearish_divergence:
-                print(f"        🔴 พบ Bearish Divergence (ราคา↑ RSI↓) - สัญญาณขาย")
-                divergence_found = True
-                divergence_type = "BEARISH"
-            else:
-                print(f"        ⚠️  ไม่พบ RSI Divergence")
-            
-            # เก็บ divergence type ไว้ใช้ใน AI analysis
-            if divergence_found:
-                self.last_divergence_type = divergence_type
-            
-            return divergence_found
-            
-        except Exception as e:
-            print(f"        ❌ ไม่สามารถตรวจสอบ RSI Divergence สำหรับ {symbol}: {e}")
+            print(f"        ❌ ไม่สามารถตรวจสอบสัญญาณ {symbol}: {e}")
             return False
 
     def calculate_rsi(self, prices, period=14):
@@ -528,192 +506,24 @@ class EnhancedPositionManager:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    def calculate_ema(self, prices, period):
-        """คำนวณ EMA"""
-        if len(prices) < period:
-            return prices[-1] if prices else 0
-        
-        # Simple EMA calculation
-        alpha = 2 / (period + 1)
-        ema = prices[0]
-        for price in prices[1:]:
-            ema = alpha * price + (1 - alpha) * ema
-        return ema
-    
-    def calculate_macd_simple(self, prices):
-        """คำนวณ MACD แบบง่าย"""
-        if len(prices) < 26:
-            return 0, 0
-        
-        # EMA 12 และ 26
-        ema_12 = self.calculate_ema(prices, 12)
-        ema_26 = self.calculate_ema(prices, 26)
-        
-        # MACD line
-        macd_line = ema_12 - ema_26
-        
-        # Signal line (EMA 9 ของ MACD)
-        # สำหรับความง่าย ใช้ค่าคงที่
-        signal_line = macd_line * 0.9
-        
-        return macd_line, signal_line
-
     def show_positions_summary(self):
-        """แสดงสรุป positions และ orders ปัจจุบัน"""
+        """แสดงสรุป positions และ orders ปัจจุบัน (แบบย่อ)"""
         try:
-            print("\n📊 สรุป Positions และ Orders ปัจจุบัน:")
-            print("="*60)
-            
-            # ดึงข้อมูล positions
             positions = self.get_positions()
-            total_pnl = 0
+            orders = self.get_all_orders()
             
-            if positions:
-                print(f"📍 Positions: {len(positions)} รายการ")
-                for pos in positions:
-                    symbol = pos['symbol']
-                    side = pos['side'].upper()
-                    contracts = abs(pos['contracts'])
-                    pnl = pos.get('unrealizedPnl', 0) or 0
-                    total_pnl += pnl
-                    
-                    print(f"   {symbol} - {side} {contracts:,.4f} (PnL: {pnl:+.2f})")
-                
-                print(f"💰 Total PnL: {total_pnl:+.2f} USDT")
-            else:
-                print("📍 Positions: 0 รายการ")
-            
-            # ดึงข้อมูล orders
-            all_orders = self.get_all_orders()
-            if all_orders:
-                print(f"📋 Orders: {len(all_orders)} รายการ")
-                
-                # จัดกลุ่ม orders ตาม symbol
-                orders_by_symbol = {}
-                for order in all_orders:
-                    symbol = order['symbol']
-                    if symbol not in orders_by_symbol:
-                        orders_by_symbol[symbol] = 0
-                    orders_by_symbol[symbol] += 1
-                
-                for symbol, count in orders_by_symbol.items():
-                    print(f"   {symbol}: {count} orders")
-            else:
-                print("📋 Orders: 0 รายการ")
-            
-            print("="*60)
+            if positions or orders:
+                print(f"� {len(positions)} positions, {len(orders)} orders")
             
         except Exception as e:
-            print(f"❌ ไม่สามารถแสดงสรุป positions: {e}")
+            print(f"❌ Error: {e}")
 
     # LOOP1: ขั้นตอนการทำงานหลักตาม step.md
     def loop1_process(self):
-        """LOOP1: ขั้นตอนการทำงานหลักตาม step.md"""
-        print("🔄 เริ่ม LOOP1 Process...")
-        print("="*60)
+        """LOOP1: ขั้นตอนการทำงานหลักตาม step.md - เฉพาะดึงเหรียญที่พร้อมเทรด"""
+        print("� LOOP1: ดึงรายการเหรียญที่พร้อมเทรด...")
         
-        # แสดงสรุป positions และ orders ก่อนเริ่มการทำงาน
-        self.show_positions_summary()
-        
-        # ตรวจสอบและแก้ไข positions ที่มีปัญหา
-        self.check_and_fix_problematic_positions()
-        
-        # ขั้นตอนที่ 1: ตรวจสอบ positions และ orders
-        print("📍 ขั้นตอนที่ 1: ตรวจสอบ positions และจำนวน orders")
-        print("🔍 กำลังดึงข้อมูล positions ที่เปิดอยู่...")
-        
-        positions = self.get_positions()
-        if not positions:
-            print("✅ ไม่มี positions ที่เปิดอยู่")
-        else:
-            print(f"📊 พบ {len(positions)} positions ที่เปิดอยู่:")
-            
-            for i, pos in enumerate(positions, 1):
-                symbol = pos['symbol']
-                contracts = pos['contracts']
-                side = pos['side']
-                unrealized_pnl = pos['unrealizedPnl'] or 0
-                
-                print(f"\n  [{i}] 🔍 ตรวจสอบ {symbol}")
-                print(f"      📊 Position: {side.upper()} {abs(contracts)}")
-                print(f"      💰 PnL: {unrealized_pnl:+.2f} USDT")
-                
-                print(f"      🔍 ค้นหา orders สำหรับ {symbol}...")
-                orders = self.get_orders_by_symbol(symbol)
-                order_count = len(orders)
-                
-                print(f"      📋 พบ {order_count} orders สำหรับ {symbol}")
-                
-                if order_count != 2:
-                    print(f"      ⚠️  {symbol} มี {order_count} orders (ต้องการ 2 orders)")
-                    print(f"      🔧 กำลังดำเนินการ: ปิด position และยกเลิก orders")
-                    
-                    # ยกเลิก orders ก่อน
-                    cancel_result = self.cancel_orders_by_symbol(symbol)
-                    if cancel_result:
-                        print(f"      ✅ ยกเลิก orders {symbol} สำเร็จ")
-                    else:
-                        print(f"      ❌ ยกเลิก orders {symbol} ไม่สำเร็จ")
-                    
-                    # ปิด position
-                    close_result = self.close_position(symbol, contracts, side)
-                    if close_result:
-                        print(f"      ✅ ปิด position {symbol} สำเร็จ")
-                        # Invalidate cache หลังจากมีการเปลี่ยนแปลง
-                        self.cache_timestamp = 0
-                    else:
-                        print(f"      ❌ ปิด position {symbol} ไม่สำเร็จ")
-                else:
-                    print(f"      ✅ {symbol} มี orders ครบ 2 orders แล้ว")
-                    # แสดงรายละเอียด orders
-                    for j, order in enumerate(orders, 1):
-                        order_type = order.get('type', 'unknown')
-                        order_side = order.get('side', 'unknown')
-                        order_amount = order.get('amount', 0)
-                        print(f"          [{j}] {order_type} {order_side} {order_amount}")
-        
-        print("\n" + "="*60)
-        
-        # ขั้นตอนที่ 2: ค้นหา orders ที่ไม่มี positions
-        print("📋 ขั้นตอนที่ 2: ค้นหา orders ที่ไม่มี positions")
-        print("🔍 กำลังดึงข้อมูล orders ทั้งหมด...")
-        
-        all_orders = self.get_all_orders()
-        if not all_orders:
-            print("✅ ไม่มี orders ที่เปิดอยู่")
-        else:
-            print(f"📊 พบ {len(all_orders)} orders ทั้งหมด")
-            
-            position_symbols = {pos['symbol'] for pos in positions}
-            orphan_orders = [order for order in all_orders if order['symbol'] not in position_symbols]
-            
-            if not orphan_orders:
-                print("✅ ไม่มี orders ที่ไม่มี positions")
-            else:
-                print(f"⚠️  พบ {len(orphan_orders)} orders ที่ไม่มี positions:")
-                
-                for i, order in enumerate(orphan_orders, 1):
-                    symbol = order['symbol']
-                    order_id = order['id']
-                    side = order['side']
-                    amount = order['amount']
-                    order_type = order.get('type', 'unknown')
-                    
-                    print(f"  [{i}] 🔄 ยกเลิก orphan order: {symbol} {order_type} {side.upper()} {amount}")
-                    cancel_result = self.cancel_order(order_id, symbol)
-                    if cancel_result:
-                        print(f"      ✅ ยกเลิก order {order_id} สำเร็จ")
-                        # Invalidate cache หลังจากมีการเปลี่ยนแปลง
-                        self.cache_timestamp = 0
-                    else:
-                        print(f"      ❌ ยกเลิก order {order_id} ไม่สำเร็จ")
-        
-        print("\n" + "="*60)
-        
-        # ขั้นตอนที่ 3: ดึงรายการเหรียญที่พร้อมเทรด
-        print("📋 ขั้นตอนที่ 3: ดึงรายการเหรียญที่พร้อมเทรด")
-        print("🔍 กำลังค้นหาเหรียญ USDT ที่พร้อมเทรด...")
-        
+        # ดึงรายการเหรียญที่พร้อมเทรด
         available_symbols = self.get_available_symbols()
         print(f"📊 พบ {len(available_symbols)} เหรียญที่พร้อมเทรด")
         
@@ -722,41 +532,24 @@ class EnhancedPositionManager:
             preview_symbols = available_symbols[:10]
             print(f"🎲 เหรียญที่สับไพ่แล้ว (10 อันดับแรก): {', '.join(preview_symbols)}")
         
-        # ขั้นตอนที่ 4: ข้ามการตั้งค่า leverage และ margin mode (ตั้งค่าตอนเทรดจริง)
-        print("📋 ขั้นตอนที่ 4: ข้ามการตั้งค่า leverage/margin (ตั้งค่าตอนเทรดจริง)")
-        print("⚡ ประหยัดเวลา - ตั้งค่าจะทำตอนเปิด position จริงเท่านั้น")
-        
-        print("\n✅ เสร็จสิ้น LOOP1 Process")
-        print("="*60)
-        
         return available_symbols
     
     def loop2_process(self, symbols):
         """LOOP2: วิเคราะห์และเทรดเหรียญด้วย Chart Pattern Analysis - แทน RSI"""
-        print("🔄 เริ่ม LOOP2 Process...")
-        print("📊 ใช้ Chart Pattern Analysis แทน RSI")
-        print("🎯 เทรด LONG/SHORT ตามคำแนะนำ AI Chart Pattern")
-        print("="*60)
+        print("🔄 LOOP2: วิเคราะห์เหรียญ...")
         
         if not symbols:
-            print("✅ ไม่มีเหรียญที่ต้องวิเคราะห์")
             return
         
-        print(f"📊 จำนวนเหรียญที่ต้องสแกน: {len(symbols)} เหรียญ")
-        print(f"📈 กรองด้วย Chart Pattern Breakout/Confirmed")
-        print(f"🤖 เทรด LONG/SHORT ตามคำแนะนำ AI Chart Pattern")
-        print(f"💰 เปิด position จนกว่าเงินจะหมด (Position Size: {self.position_size_usdt} USDT/position)")
+        print(f"📊 สแกน {len(symbols)} เหรียญ")
         
-        # ตรวจสอบจำนวน positions และ balance ตาม step.md
+        # ตรวจสอบ balance
         balance = self.check_available_balance()
         current_positions = self.get_positions()
-        position_count = len(current_positions)
-        print(f"💰 Balance เริ่มต้น: {balance:.2f} USDT")
-        print(f"📊 จำนวน Positions ปัจจุบัน: {position_count}")
         
         # ตรวจสอบ balance แทน position limit - เปิดไปเรื่อยๆ จนกว่าเงินจะหมด
         if balance < self.position_size_usdt:
-            print(f"⚠️ Balance ({balance:.2f} USDT) ไม่เพียงพอสำหรับ position ใหม่ (ต้องการ {self.position_size_usdt} USDT)")
+            print(f"⚠️ Balance ไม่เพียงพอ: {balance:.2f} USDT")
             return
         
         # เปิด position จนกว่าเงินจะหมด (ไม่จำกัดจำนวน)
@@ -795,10 +588,8 @@ class EnhancedPositionManager:
                 
                 print(f"\n[{i:3d}/{len(symbols):3d}] 🔍 กำลังวิเคราะห์ {symbol}...")
                 
-                # Rate limiting: เพิ่ม delay เพื่อหลีกเลี่ยง Binance rate limit
-                if i > 1:  # ไม่ delay ครั้งแรก
-                    print(f"    ⏳ รอ 0.25 วินาที เพื่อหลีกเลี่ยง rate limit...")
-                    time.sleep(0.25)  # รอ 0.25 วินาทีระหว่างเหรียญ
+                # ไม่ต้อง rate limiting เพราะใช้ Advanced Historical Data Manager
+                # (ข้อมูลส่วนใหญ่มาจาก cache, ไม่ต้องเรียก API บ่อย)
                 
                 # ตรวจสอบ balance ก่อนเปิด position
                 try:
@@ -823,24 +614,14 @@ class EnhancedPositionManager:
                         continue
                 
                 # ขั้นตอนที่ 1: ดึงข้อมูล OHLCV 1H สำหรับ Linear Regression Channel Analysis (120 timeframes)
-                print(f"    📊 ดึงข้อมูล OHLCV 1H (120 timeframes) ใหม่จาก Binance API...")
+                print(f"    📊 เตรียมข้อมูล OHLCV 1H (120 timeframes)...")
                 
                 try:
-                    ohlcv_1h = self.get_ohlcv_data(symbol, timeframe='1h', limit=120)  # ดึง 120 timeframes ตามที่ต้องการ
+                    ohlcv_1h = self.get_ohlcv_data(symbol, timeframe='1h', limit=120)  # ใช้ Advanced Historical Data Manager
                 except Exception as e:
-                    if "429" in str(e) or "Too Many Requests" in str(e):
-                        print(f"    ⚠️ Rate limit ในการดึง OHLCV - รอ 15 วินาที...")
-                        time.sleep(15)
-                        try:
-                            ohlcv_1h = self.get_ohlcv_data(symbol, timeframe='1h', limit=120)  # ใช้ 120 timeframes
-                        except Exception as e2:
-                            print(f"    ❌ ไม่สามารถดึงข้อมูล OHLCV 1H สำหรับ {symbol}: {e2}")
-                            skipped_count += 1
-                            continue
-                    else:
-                        print(f"    ❌ ไม่สามารถดึงข้อมูล OHLCV 1H สำหรับ {symbol}: {e}")
-                        skipped_count += 1
-                        continue
+                    print(f"    ❌ ไม่สามารถดึงข้อมูล OHLCV 1H สำหรับ {symbol}: {e}")
+                    skipped_count += 1
+                    continue
                 
                 if not ohlcv_1h or len(ohlcv_1h) < 20:
                     print(f"    ❌ ข้อมูล OHLCV 1H ไม่เพียงพอสำหรับ {symbol}")
@@ -848,59 +629,53 @@ class EnhancedPositionManager:
                     processed_in_batch += 1  # นับเป็น processed
                     continue
                 
-                print(f"    ✅ ได้ข้อมูล OHLCV 1H: {len(ohlcv_1h)} records (120 timeframes จาก API)")
+                print(f"    ✅ ได้ข้อมูล OHLCV 1H: {len(ohlcv_1h)} records")
                 
                 # ขั้นตอนที่ 2: กรองด้วย Python Linear Regression Channel detector (วิธีใหม่)
                 print(f"    🔍 ขั้นตอนที่ 1: วน loop 10 รอบ หา LRC breakout...")
-                print(f"    🔍 ขั้นตอนที่ 2: ถ้ามี breakout → ตรวจ EMA7 touch + ราคาปัจจุบัน...")
-                print(f"    🔍 ขั้นตอนที่ 3: Stop Loss = EMA7...")
+                print(f"    🔍 ขั้นตอนที่ 2: ถ้ามี breakout → ตรวจ Channel Price validation...")
+                print(f"    🔍 ขั้นตอนที่ 3: ให้ AI คำนวณ Stop Loss และ Take Profit...")
                 
                 # ใช้ LRC detector เพื่อตรวจสอบ channel breakout
                 lrc_result = None
                 if self.lrc_detector_class:
                     try:
                         # Convert OHLCV data for LRC detector
-                        from linear_regression_detector import OHLCV
-                        ohlc_objects = []
-                        for candle in ohlcv_1h:
-                            ohlc_obj = OHLCV(
-                                timestamp=int(candle[0]),
-                                open=float(candle[1]),
-                                high=float(candle[2]),
-                                low=float(candle[3]),
-                                close=float(candle[4]),
-                                volume=float(candle[5])
-                            )
-                            ohlc_objects.append(ohlc_obj)
+                        ohlc_objects = self.convert_ohlcv_to_detector_format(ohlcv_1h)
                         
-                        # Create LRC detector and analyze with new method
-                        lrc_detector = self.lrc_detector_class(ohlc_objects, length=100, deviation=2.0)
-                        lrc_result = lrc_detector.detect_breakout_with_ema7_confirmation(max_lookback=10)
-                        
-                        if not lrc_result.is_fresh_breakout or lrc_result.signal == 'NEUTRAL':
-                            print(f"    ❌ ไม่ผ่านเงื่อนไข LRC + EMA7 validation ใน {symbol} - ข้าม")
+                        if ohlc_objects:
+                            # Create LRC detector and analyze with new method
+                            lrc_detector = self.lrc_detector_class(ohlc_objects, length=100, deviation=2.0)
+                            lrc_result = lrc_detector.detect_breakout_with_channel_price_check(max_lookback=5)
                             
-                            # แสดงสาเหตุที่ไม่ผ่าน
-                            if hasattr(lrc_result, 'description') and 'no_lrc_breakout' in lrc_result.description:
-                                print(f"        📊 LRC Breakout: NO (ไม่พบ breakout ใน 10 timeframes)")
-                            elif hasattr(lrc_result, 'description') and 'ema7' in lrc_result.description.lower():
-                                print(f"        📊 LRC Breakout: YES, แต่ EMA7 validation: NO")
-                                print(f"        📊 (ไม่ทับ EMA7 หรือราคาไม่ตรงตามทิศทาง breakout)")
+                            if not lrc_result.is_fresh_breakout or lrc_result.signal == 'NEUTRAL':
+                                print(f"    ❌ ไม่ผ่านเงื่อนไข LRC + Channel Price validation ใน {symbol} - ข้าม")
+                                
+                                # แสดงสาเหตุที่ไม่ผ่าน
+                                if hasattr(lrc_result, 'description') and 'no_lrc_breakout' in lrc_result.description:
+                                    print(f"        📊 LRC Breakout: NO (ไม่พบ breakout ใน 10 timeframes)")
+                                elif hasattr(lrc_result, 'description') and 'channel' in lrc_result.description.lower():
+                                    print(f"        📊 LRC Breakout: YES, แต่ Channel Price validation: NO")
+                                    print(f"        📊 (ราคาไม่ตรงตามเงื่อนไข channel price)")
+                                
+                                print(f"        📊 Signal: {lrc_result.signal}")
+                                skipped_count += 1
+                                processed_in_batch += 1  # นับเป็น processed
+                                continue
                             
-                            print(f"        📊 Signal: {lrc_result.signal}")
+                            print(f"    ✅ ผ่านเงื่อนไข LRC + Channel Price validation ใน {symbol}!")
+                            print(f"        📊 LRC Breakout: YES ({lrc_result.breakout_candles_ago} candles ago)")
+                            print(f"        📊 Direction: {lrc_result.trend_direction}")
+                            print(f"        📊 Channel Price Validation: YES")
+                            print(f"        📊 Signal: {lrc_result.signal} (Confidence: {lrc_result.confidence:.1f}%)")
+                            print(f"        📊 Pattern: {lrc_result.pattern_type}")
+                            print(f"        📊 Stop Loss: {lrc_result.stop_loss:.6f}")
+                            print(f"        📊 Slope: {lrc_result.slope:.6f}, Status: {lrc_result.pattern_status}")
+                        else:
+                            print(f"    ❌ ไม่สามารถแปลงข้อมูล OHLCV สำหรับ LRC detector")
                             skipped_count += 1
-                            processed_in_batch += 1  # นับเป็น processed
+                            processed_in_batch += 1
                             continue
-                        
-                        print(f"    ✅ ผ่านเงื่อนไข LRC + EMA7 validation ใน {symbol}!")
-                        print(f"        📊 LRC Breakout: YES ({lrc_result.breakout_candles_ago} candles ago)")
-                        print(f"        📊 Direction: {lrc_result.trend_direction}")
-                        print(f"        📊 EMA7 Validation: YES (3 แท่งล่าสุดทับ EMA7 + ราคาตรงทิศทาง)")
-                        print(f"        📊 Signal: {lrc_result.signal} (Confidence: {lrc_result.confidence:.1f}%)")
-                        print(f"        📊 Pattern: {lrc_result.pattern_type}")
-                        print(f"        📊 Stop Loss: EMA7 = {lrc_result.stop_loss:.6f}")
-                        print(f"        📊 Slope: {lrc_result.slope:.6f}, Status: {lrc_result.pattern_status}")
-                        
                         # เงื่อนไขที่ 3: ส่งให้ AI ตัดสินใจสุดท้าย (เฉพาะที่ผ่านการยืนยันแล้ว)
                         # เงื่อนไขที่ 3: ส่งให้ AI ตัดสินใจสุดท้าย (เฉพาะที่ผ่านการยืนยันแล้ว)
                         if lrc_result.signal == 'NEUTRAL':
@@ -918,9 +693,10 @@ class EnhancedPositionManager:
                 # ขั้นตอนที่ 3: ส่งไปยัง AI เฉพาะเหรียญที่มี fresh LRC breakout และ Signal ไม่เป็น NEUTRAL
                 print(f"    🤖 ส่งข้อมูลไปยัง AI Linear Regression Channel Analyzer...")
                 
-                # สร้าง previous_patterns จาก LRC result
+                # สร้าง previous_patterns จาก LRC result พร้อมข้อมูลสำหรับ AI คำนวณ SL/TP
                 previous_patterns = []
                 if lrc_result:
+                    current_price = ohlcv_1h[-1][4]  # ราคาปัจจุบัน
                     previous_patterns = [{
                         'type': lrc_result.pattern_type,
                         'confidence': lrc_result.confidence,
@@ -930,7 +706,12 @@ class EnhancedPositionManager:
                         'slope': lrc_result.slope,
                         'upper_channel': lrc_result.upper_channel,
                         'middle_line': lrc_result.middle_line,
-                        'lower_channel': lrc_result.lower_channel
+                        'lower_channel': lrc_result.lower_channel,
+                        'entry_level': current_price,
+                        'current_price': current_price,
+                        'channel_reference': lrc_result.upper_channel if lrc_result.signal == 'LONG' else lrc_result.lower_channel,
+                        'request_ai_sl_tp': True,  # บอก AI ให้คำนวณ SL/TP ที่เหมาะสม
+                        'strength': lrc_result.strength
                     }]
                 
                 # ส่งเฉพาะข้อมูล 1H ไปยัง AI (ไม่ใช้ 4H)
@@ -959,10 +740,27 @@ class EnhancedPositionManager:
                     processed_in_batch += 1  # นับเป็น processed
                     continue
                 
+                # ตรวจสอบ trend_direction ไม่เป็น "sideways" (ใหม่: ไม่เปิด position ใน sideways market)
+                trend_direction = lrc_result.trend_direction if lrc_result else analysis.get('trend_direction', 'unknown')
+                if trend_direction.lower() == 'sideways':
+                    print(f"    ⚠️  Trend Direction เป็น 'sideways' - ไม่เปิด position ใน sideways market - ข้าม {symbol}")
+                    analyzed_count += 1
+                    processed_in_batch += 1  # นับเป็น processed
+                    continue
+                
+                # ตรวจสอบ AI-calculated confidence >= 80% (ใหม่: ใช้เฉพาะ high-confidence trades)
+                if confidence < 80:
+                    print(f"    ⚠️  AI Confidence ต่ำกว่า 80% ({confidence}%) - ใช้เฉพาะ high-confidence trades - ข้าม {symbol}")
+                    analyzed_count += 1
+                    processed_in_batch += 1  # นับเป็น processed
+                    continue
+                
                 ai_analyzed += 1
                 
-                # ขั้นตอนที่ 4: เปิด position เมื่อ AI ให้สัญญาณ LRC + EMA7 ที่ชัดเจน
-                print(f"    ✅ พบ LRC + EMA7 pattern {pattern_detected} ที่เป็น {action} - ดำเนินการเปิด position")
+                # ขั้นตอนที่ 4: เปิด position เมื่อ AI ให้สัญญาณ LRC + Channel Price ที่ชัดเจน
+                print(f"    ✅ พบ LRC + Channel Price pattern {pattern_detected} ที่เป็น {action}")
+                print(f"    📈 Trend Direction: {trend_direction}, Confidence: {confidence}% (>= 80%)")
+                print(f"    🚀 ผ่านทุกเงื่อนไข - ดำเนินการเปิด position")
                 
                 # ตรวจสอบว่าเหรียญนี้มี position เปิดอยู่แล้วหรือไม่
                 existing_positions = self.get_positions()
@@ -1001,26 +799,31 @@ class EnhancedPositionManager:
                 print(f"    📏 คำนวณ quantity: {quantity}")
                 
                 if quantity > 0:
-                    # ใช้ Stop Loss = EMA7 จาก LRC result (ตามที่ต้องการ)
-                    print(f"    🎯 ใช้ Stop Loss = EMA7 จาก LRC analysis...")
+                    # ใช้ Stop Loss และ Take Profit ที่ AI คำนวณให้
+                    print(f"    🎯 ใช้ Stop Loss และ Take Profit ที่ AI คำนวณ...")
                     
-                    # ใช้ Stop Loss และ Take Profit จาก LRC result
-                    if lrc_result and hasattr(lrc_result, 'stop_loss') and hasattr(lrc_result, 'take_profit'):
-                        stop_loss = lrc_result.stop_loss  # Stop Loss = EMA7
-                        take_profit = lrc_result.take_profit
-                        print(f"    📊 LRC TP/SL: TP={take_profit:.6f}, SL={stop_loss:.6f} (SL=EMA7)")
+                    # ดึงค่า SL/TP จาก AI analysis result
+                    ai_stop_loss = analysis.get('stop_loss', 0)
+                    ai_take_profit = analysis.get('take_profit', 0)
+                    
+                    if ai_stop_loss > 0 and ai_take_profit > 0:
+                        stop_loss = ai_stop_loss
+                        take_profit = ai_take_profit
+                        print(f"    📊 AI TP/SL: TP={take_profit:.6f}, SL={stop_loss:.6f}")
                     else:
-                        # Fallback ถ้าไม่มี LRC result
+                        # Fallback: ใช้ channel reference สำหรับ SL และ percentage สำหรับ TP
                         if action.lower() == 'long':
-                            take_profit = current_price * 1.15  # +15%
-                            stop_loss = current_price * 0.95    # -5%
+                            # Long: SL = Upper Channel * 0.98, TP = Current Price * 1.02
+                            stop_loss = lrc_result.upper_channel * 0.98 if lrc_result else current_price * 0.95
+                            take_profit = current_price * 1.02
                         else:  # SHORT
-                            take_profit = current_price * 0.85  # -15%
-                            stop_loss = current_price * 1.05    # +5%
+                            # Short: SL = Lower Channel * 1.02, TP = Current Price * 0.98  
+                            stop_loss = lrc_result.lower_channel * 1.02 if lrc_result else current_price * 1.05
+                            take_profit = current_price * 0.98
                         print(f"    📊 Fallback TP/SL: TP={take_profit:.6f}, SL={stop_loss:.6f}")
                     
                     # เปิด position
-                    print(f"    🚀 เปิด {action} position ตาม LRC + EMA7 {pattern_detected} (SL=EMA7)")
+                    print(f"    🚀 เปิด {action} position ตาม LRC + Channel Price {pattern_detected} (AI SL/TP)")
                     print(f"    📊 {symbol} {side.upper()} {quantity} @ {current_price}")
                     success, error_type = self.open_position_with_sl_tp(symbol, side, quantity, current_price, stop_loss, take_profit)
                     
@@ -1062,13 +865,13 @@ class EnhancedPositionManager:
         
         # สรุปผลลัพธ์
         print("\n" + "="*60)
-        print("📊 สรุปผล LOOP2 LRC + EMA7 Validation Analysis:")
+        print("📊 สรุปผล LOOP2 LRC + Channel Price Validation Analysis:")
         print(f"   📊 จำนวนเหรียญที่สแกน: {len(symbols)} เหรียญ")
-        print(f"   🔍 ผ่านการกรอง LRC + EMA7: {ai_analyzed} เหรียญ")
+        print(f"   🔍 ผ่านการกรอง LRC + Channel Price: {ai_analyzed} เหรียญ")
         print(f"   🚀 เปิด positions สำเร็จ: {position_opened} รายการ")
         print(f"   ⚠️  ข้ามไป: {skipped_count} เหรียญ")
         print(f"   💰 Balance สุดท้าย: {self.check_available_balance():.2f} USDT")
-        print(f"   📌 หมายเหตุ: Stop Loss = EMA7 ทุก position")
+        print(f"   📌 หมายเหตุ: AI คำนวณ Stop Loss และ Take Profit ที่เหมาะสมทุก position")
         print("="*60)
     
     def show_summary(self):
@@ -1140,8 +943,6 @@ class EnhancedPositionManager:
     def check_and_fix_problematic_positions(self):
         """ตรวจสอบและแก้ไข positions ที่มีปัญหา (orders ไม่ครบ)"""
         try:
-            print("🔍 ตรวจสอบ positions ที่มีปัญหา...")
-            
             # ดึงข้อมูล positions และ orders
             positions = self.get_positions()
             all_orders = self.get_all_orders()
@@ -1172,14 +973,9 @@ class EnhancedPositionManager:
                         })
             
             if problematic_positions:
-                print(f"⚠️  พบ positions ที่มีปัญหา {len(problematic_positions)} รายการ:")
-                
                 for prob_pos in problematic_positions:
                     symbol = prob_pos['symbol']
-                    print(f"   📊 {symbol}: {prob_pos['order_count']} orders (ควรมี 2)")
-                    print(f"      Size: {prob_pos['contracts']}, PnL: {prob_pos['pnl']}")
                     
-                    # ถามผู้ใช้หรือปิดอัตโนมัติตามเงื่อนไข
                     # ปิดถ้า PnL เป็นลบมาก หรือมี orders เป็น 0
                     should_close = (
                         prob_pos['order_count'] == 0 or  # ไม่มี orders เลย
@@ -1187,51 +983,61 @@ class EnhancedPositionManager:
                     )
                     
                     if should_close:
-                        print(f"🔄 ปิด position {symbol} (เหตุผล: orders ไม่ครบ/ขาดทุนมาก)")
-                        success = self.close_position(symbol, prob_pos['contracts'], prob_pos['side'])
+                        print(f"🔄 ปิด position {symbol} (orders ไม่ครบ)")
+                        self.close_position(symbol, prob_pos['contracts'], prob_pos['side'])
                         
-                        if success:
-                            # ยกเลิก orders ที่เหลือ
-                            try:
-                                remaining_orders = [o for o in all_orders if o['symbol'] == symbol]
-                                for order in remaining_orders:
-                                    self.exchange.cancel_order(order['id'], symbol)
-                                    print(f"   🚫 ยกเลิก order {order['id']}")
-                            except Exception as e:
-                                print(f"   ⚠️ ไม่สามารถยกเลิก orders: {e}")
-                    else:
-                        print(f"   ⏳ เก็บ position {symbol} ไว้ (PnL: {prob_pos['pnl']})")
-                        
-            else:
-                print("✅ ไม่พบ positions ที่มีปัญหา")
+                        # ยกเลิก orders ที่เหลือ
+                        try:
+                            remaining_orders = [o for o in all_orders if o['symbol'] == symbol]
+                            for order in remaining_orders:
+                                self.exchange.cancel_order(order['id'], symbol)
+                        except Exception:
+                            pass
                 
         except Exception as e:
             print(f"❌ เกิดข้อผิดพลาดในการตรวจสอบ positions: {e}")
 
-    def main_loop(self):
-        """
-        Main trading loop that continuously monitors and trades based on Linear Regression Channel patterns
-        """
-        print("\n🔄 เริ่มต้น Main Trading Loop...")
-        print("📊 ใช้ Linear Regression Channel Detection อย่างเดียว")
-        print("⚡ กำลังค้นหา LRC breakout + EMA7 confirmation...")
+    def hourly_position_check(self):
+        """ตรวจสอบ positions และ orders ทุกชั่วโมง"""
+        print("🔍 ตรวจสอบ positions และ orders...")
         
-        try:
-            # เริ่ม LOOP1: ตรวจสอบและแก้ไข positions/orders
-            self.loop1_process()
+        # ตรวจสอบและแก้ไข positions ที่มีปัญหา
+        self.check_and_fix_problematic_positions()
+        
+        # ตรวจสอบ positions และ orders ปัจจุบัน
+        positions = self.get_positions()
+        all_orders = self.get_all_orders()
+        
+        if positions:
+            print(f"📍 {len(positions)} positions เปิดอยู่")
+            for pos in positions:
+                symbol = pos['symbol']
+                contracts = pos['contracts']
+                side = pos['side']
+                
+                # ตรวจสอบ orders สำหรับ position นี้
+                symbol_orders = self.get_orders_by_symbol(symbol)
+                order_count = len(symbol_orders)
+                
+                if order_count != 2:
+                    print(f"⚠️  {symbol}: {order_count} orders (ต้องการ 2)")
+                    
+                    # ยกเลิก orders และปิด position
+                    self.cancel_orders_by_symbol(symbol)
+                    self.close_position(symbol, contracts, side)
+                    print(f"✅ ปิด position {symbol}")
+                    self.cache_timestamp = 0  # Invalidate cache
+        
+        # ตรวจสอบ orphan orders (orders ที่ไม่มี positions)
+        if all_orders and positions:
+            position_symbols = {pos['symbol'] for pos in positions}
+            orphan_orders = [order for order in all_orders if order['symbol'] not in position_symbols]
             
-            # เริ่ม LOOP2: วิเคราะห์และเปิด positions ใหม่
-            symbols = self.get_available_symbols()
-            self.loop2_process(symbols)
-            
-        except KeyboardInterrupt:
-            print("\n⚠️ รับสัญญาณหยุด (Ctrl+C)")
-            print("🔄 กำลังหยุดระบบ...")
-            
-        except Exception as e:
-            print(f"\n❌ เกิดข้อผิดพลาดใน main loop: {e}")
-            import traceback
-            traceback.print_exc()
-            
-        finally:
-            print("🏁 หยุดการทำงานของ Main Trading Loop")
+            if orphan_orders:
+                print(f"🔄 ยกเลิก {len(orphan_orders)} orphan orders")
+                for order in orphan_orders:
+                    self.cancel_order(order['id'], order['symbol'])
+                self.cache_timestamp = 0  # Invalidate cache
+        
+        if all_orders:
+            print(f"📋 {len(all_orders)} orders รอดำเนินการ")

@@ -1,0 +1,53 @@
+# Alternative Dockerfile for guaranteed Linux compatibility
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV OMP_NUM_THREADS=1
+ENV PYTHONPATH=/app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libopenblas-dev \
+    liblapack-dev \
+    gfortran \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy application files first
+COPY . .
+
+# Create logs directory  
+RUN mkdir -p logs
+
+# Remove any __pycache__ and .pyc files that might cause issues
+RUN find . -type f -name "*.pyc" -delete && \
+    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+# Install Python dependencies directly in the Linux container
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip cache purge && \
+    pip install --no-cache-dir ccxt==4.2.25 && \
+    pip install --no-cache-dir python-dotenv==1.0.0 && \
+    pip install --no-cache-dir requests==2.32.3 && \
+    pip install --no-cache-dir numpy==1.26.4 && \
+    pip install --no-cache-dir pandas==2.2.1 && \
+    pip install --no-cache-dir colorama==0.4.6
+
+# Test imports before running
+RUN python -c "import ccxt; print('CCXT version:', ccxt.__version__)" && \
+    python -c "import numpy; print('NumPy version:', numpy.__version__)" && \
+    python -c "import pandas; print('Pandas version:', pandas.__version__)" && \
+    python -c "import requests; print('Requests import successful')" && \
+    python -c "import dotenv; print('Python-dotenv import successful')"
+
+# Run the application with unbuffered output
+CMD ["python", "-u", "app.py"]

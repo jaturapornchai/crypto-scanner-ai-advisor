@@ -1,0 +1,16 @@
+{
+  "active_symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "ADAUSDT",
+    "XRPUSDT",
+    "DOTUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "BCHUSDT",
+    "XLMUSDT"
+  ],
+  "excluded_symbols": [],
+  "min_volume_24h": 1000000
+}

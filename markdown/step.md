@@ -281,12 +281,14 @@ Line Breakout + EMA25 Analysis Required
 
 ## 🎯 สรุปการทำงาน (อัปเดต 2025)
 
-### 🔄 Flow หลัก (ใหม่)
+### 🔄 Flow หลัก (อัปเดต)
 
 ```text
 Main Loop: First time immediately → Next time wait for next hour
     ↓
-LOOP1: Position Management → Coin Preparation → Shuffle
+LOOP0: Hourly Position & Order Check (ทุกชั่วโมง)
+    ↓
+LOOP1: Coin Preparation & Shuffle
     ↓
 LOOP2: Balance Check → Python Pattern Analysis → Pattern Confirmation → Trade Execution
     ↓

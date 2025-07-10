@@ -1,9 +1,34 @@
 version: "3.8"
 
 services:
+  crypto-scanner-ai-advisor:
+    image: crypto-scanner-ai-advisor:latest
+    container_name: crypto-scanner-ai-advisor
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      - OPENBLAS_NUM_THREADS=1
+      - OPENBLAS_MAIN_FREE=1
+      - OMP_NUM_THREADS=1
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPATH=/app
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - crypto_network
+
+  # Legacy getspot service (if needed)
   getspot:
     image: jaturapornchai/getspot:latest
     container_name: getspot
+    platform: linux/amd64
     restart: unless-stopped
     environment:
       - OPENBLAS_NUM_THREADS=1
@@ -21,6 +46,8 @@ services:
         max-file: "3"
     networks:
       - crypto_network
+    profiles:
+      - legacy
 
 networks:
   crypto_network:

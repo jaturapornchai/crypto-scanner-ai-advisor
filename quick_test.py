@@ -11,7 +11,7 @@ from ai_analyzer import AIAnalyzer
 def test_single_symbol():
     """Test a single symbol to verify the AI analyzer works with new prompt"""
     
-    print("🔍 Testing Line Breakout + EMA7 AI analyzer...")
+    print("🔍 Testing Linear Regression Channel AI analyzer...")
     
     # Initialize components
     exchange = ExchangeClient()
@@ -42,7 +42,7 @@ def test_single_symbol():
         'ema7_confirmation': 'both'
     }
     
-    print("🤖 Testing AI analyzer with mock Line Breakout + EMA7 pattern...")
+    print("🤖 Testing AI analyzer with mock Linear Regression Channel pattern...")
     
     ai_result = ai_analyzer.analyze_symbol(symbol, ohlcv_1h, None, [mock_pattern])
     

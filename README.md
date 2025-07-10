@@ -48,7 +48,7 @@
 ## 📁 Main Files
 
 - `app.py` - ไฟล์หลักของระบบ
-- `pattern_detector.py` - Line Breakout + EMA7 Detection (Python)
+- `linear_regression_detector.py` - Linear Regression Channel Detection (Python)
 - `enhanced_position_manager.py` - Position Management
 - `ai_analyzer.py` - AI Analysis
 - `exchange_client.py` - Binance Connection

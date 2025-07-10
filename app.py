@@ -35,29 +35,21 @@ def main():
         # Main trading loop
         while True:
             try:
-                print(f"\n🕒 เริ่มรอบใหม่: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"\n🕒 {time.strftime('%Y-%m-%d %H:%M:%S')}")
                 print("="*60)
                 
-                # แสดงสรุปข้อมูลก่อนเริ่ม
-                print("\n📊 สถานะก่อนเริ่ม:")
-                manager.show_summary()
+                # ทำการตรวจสอบ positions และ orders ทุกชั่วโมง
+                manager.hourly_position_check()
                 
-                # รัน LOOP1 Process
+                # รัน LOOP1 Process (ดึงเหรียญที่ไม่มี position)
                 available_symbols = manager.loop1_process()
                 
-                # รัน LOOP2 Process
+                # รัน LOOP2 Process (วิเคราะห์เหรียญใหม่)
                 if available_symbols:
-                    print(f"📊 เริ่มวิเคราะห์ทุกเหรียญ: {len(available_symbols)} เหรียญ")
-                    # วิเคราะห์ทุกเหรียญจาก LOOP1 ตามข้อกำหนดใหม่
+                    print(f"📊 วิเคราะห์เหรียญ: {len(available_symbols)} เหรียญ")
                     manager.loop2_process(available_symbols)
-                else:
-                    print("✅ ไม่มีเหรียญที่ต้องวิเคราะห์")
                 
-                # แสดงสรุปข้อมูลหลังเสร็จสิ้น
-                print("\n📊 สถานะหลังเสร็จสิ้น:")
-                manager.show_summary()
-                
-                print("\n✅ เสร็จสิ้นรอบนี้")
+                print("✅ เสร็จสิ้นรอบนี้")
                 print("="*60)
                 
                 # รอจนถึงชั่วโมงถัดไป

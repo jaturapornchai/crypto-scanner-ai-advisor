@@ -1,0 +1,15 @@
+{
+  "position_size_usdt": 20,
+  "max_positions": 99999,
+  "use_all_capital": true,
+  "unlimited_capital": true,
+  "total_capital_usdt": 999999999,
+  "save_history": false,
+  "save_reports": false,
+  "save_logs": false,
+  "risk_percentage": 2.0,
+  "lrc_length": 100,
+  "lrc_deviation": 2.0,
+  "max_lookback": 5,
+  "min_confidence": 75.0
+}

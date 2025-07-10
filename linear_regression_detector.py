@@ -961,11 +961,23 @@ class LinearRegressionChannelDetector:
             channel_based_tp = lrc_result['upper_channel'] * 1.02
             price_based_tp = current_price * 1.02  # minimum 2% above current price
             take_profit = max(channel_based_tp, price_based_tp)  # use whichever is higher
+            
+            # Additional safety check to ensure TP > current price
+            if take_profit <= current_price:
+                take_profit = current_price * 1.03  # Force 3% above current price
+                print(f"        🔧 Safety check: Adjusted TP to {take_profit:.6f} (+3% above current)")
+                
         elif signal == "SHORT":
             # Ensure take profit is always below current price for SHORT
             channel_based_tp = lrc_result['lower_channel'] * 0.98
             price_based_tp = current_price * 0.98  # minimum 2% below current price
             take_profit = min(channel_based_tp, price_based_tp)  # use whichever is lower
+            
+            # Additional safety check to ensure TP < current price
+            if take_profit >= current_price:
+                take_profit = current_price * 0.97  # Force 3% below current price
+                print(f"        🔧 Safety check: Adjusted TP to {take_profit:.6f} (-3% below current)")
+                
         else:
             take_profit = current_price * (1.15 if signal == "LONG" else 0.85)  # fallback
         

@@ -1,7 +1,7 @@
 """
-AI Analyzer Module - DeepSeek AI Integration for Line Breakout + EMA7 Analysis  
-โมดูลสำหรับวิเคราะห์เหรียญด้วย Line Breakout + EMA7 Analysis แบบ Direct API (ไม่ใช้ cache)
-ใช้ Python Line Breakout + EMA7 Detector และ AI สำหรับการตัดสินใจ trading
+AI Analyzer Module - DeepSeek AI Integration for Linear Regression Channel Analysis  
+โมดูลสำหรับวิเคราะห์เหรียญด้วย Linear Regression Channel Analysis แบบ Direct API (ไม่ใช้ cache)
+ใช้ Python Linear Regression Channel Detector และ AI สำหรับการตัดสินใจ trading
 """
 
 import os
@@ -12,7 +12,7 @@ import tempfile
 from dotenv import load_dotenv
 
 class AIAnalyzer:
-    """Class สำหรับวิเคราะห์เหรียญด้วย Line Breakout + EMA7 Analysis AI - Direct API"""
+    """Class สำหรับวิเคราะห์เหรียญด้วย Linear Regression Channel Analysis AI - Direct API"""
     
     def __init__(self, exchange=None):
         """Initialize AI Analyzer without caching"""
@@ -27,21 +27,21 @@ class AIAnalyzer:
         # ไม่ใช้ Historical Data Manager เพื่อหลีกเลี่ยง caching
         self.data_manager = None
         
-        print("🤖 AI Line Breakout + EMA7 Analyzer พร้อมใช้งาน")
-        print("📊 ใช้ Line Breakout + EMA7 Detection เท่านั้น")
+        print("🤖 AI Linear Regression Channel Analyzer พร้อมใช้งาน")
+        print("📊 ใช้ Linear Regression Channel Detection เท่านั้น")
         print("⚡ Direct API mode - ไม่ใช้ cache")
     
     def analyze_symbol(self, symbol, ohlcv_1h, ohlcv_4h=None, previous_patterns=None):
-        """วิเคราะห์เหรียญด้วย AI Line Breakout + EMA7 Analysis - ไม่ใช้ cache"""
+        """วิเคราะห์เหรียญด้วย AI Linear Regression Channel Analysis - ไม่ใช้ cache"""
         try:
-            if not ohlcv_1h or len(ohlcv_1h) < 20:
-                return {"action": "HOLD", "confidence": 0, "stop_loss": 0, "take_profit": 0, "reason": "ข้อมูลไม่เพียงพอสำหรับ Line Breakout + EMA7 analysis"}
+            if not ohlcv_1h or len(ohlcv_1h) < 100:
+                return {"action": "HOLD", "confidence": 0, "stop_loss": 0, "take_profit": 0, "reason": "ข้อมูลไม่เพียงพอสำหรับ Linear Regression Channel analysis"}
             
             # ใช้ข้อมูล 1H ที่ส่งมาโดยตรง (ไม่ดึงจาก historical data manager)
             # ไม่ใช้ cache เพื่อให้ได้ข้อมูลที่อัปเดตล่าสุดเสมอ
             
-            # สร้าง prompt สำหรับ AI Line Breakout + EMA7 Analysis ใช้ข้อมูลที่ส่งมา
-            prompt = self.create_line_breakout_ema7_prompt(symbol, ohlcv_1h, previous_patterns)
+            # สร้าง prompt สำหรับ AI Linear Regression Channel Analysis ใช้ข้อมูลที่ส่งมา
+            prompt = self.create_linear_regression_channel_prompt(symbol, ohlcv_1h, previous_patterns)
             
             # ส่งคำขอไปยัง AI
             response = self.call_deepseek_api(prompt)
@@ -118,90 +118,99 @@ class AIAnalyzer:
         
         return False
     
-    def create_line_breakout_ema7_prompt(self, symbol, ohlcv_1h, previous_patterns):
-        """สร้าง prompt สำหรับ AI Line Breakout + EMA7 Analysis"""
+    def create_linear_regression_channel_prompt(self, symbol, ohlcv_1h, previous_patterns):
+        """สร้าง prompt สำหรับ AI Linear Regression Channel Analysis"""
         current_price = ohlcv_1h[-1][4] if ohlcv_1h else 0
         
-        # ใช้ข้อมูล 20 แท่งล่าสุดสำหรับ Line Breakout + EMA7 calculation
-        recent_20 = ohlcv_1h[-20:] if len(ohlcv_1h) >= 20 else ohlcv_1h
+        # ใช้ข้อมูล 100 แท่งล่าสุดสำหรับ Linear Regression Channel calculation
+        recent_100 = ohlcv_1h[-100:] if len(ohlcv_1h) >= 100 else ohlcv_1h
         
-        # สรุปข้อมูล Line Breakout + EMA7 patterns ที่ส่งมา
+        # สรุปข้อมูล Linear Regression Channel patterns ที่ส่งมา
         patterns_summary = ""
         if previous_patterns:
             for pattern in previous_patterns:
-                patterns_summary += f"- {pattern.get('pattern', 'Unknown')}: {pattern.get('confidence', 0):.1f}% (Breakout: {pattern.get('breakout_candles_ago', 'N/A')} candles ago, Signal: {pattern.get('signal', 'N/A')})\n"
+                patterns_summary += f"- {pattern.get('type', 'Unknown')}: {pattern.get('confidence', 0):.1f}% (Breakout: {pattern.get('breakout_candles_ago', 'N/A')} candles ago, Signal: {pattern.get('signal', 'N/A')})\n"
+                patterns_summary += f"  Trend: {pattern.get('trend_direction', 'N/A')}, Slope: {pattern.get('slope', 0):.6f}\n"
         
-        prompt = f"""คุณเป็น Professional Line Breakout + EMA7 Analyst ให้วิเคราะห์ข้อมูลตาม Line Breakout + EMA7 Strategy:
+        prompt = f"""คุณเป็น Professional Linear Regression Channel Analyst ให้วิเคราะห์ข้อมูลตาม Linear Regression Channel Strategy:
 
 Symbol: {symbol}
 Current Price: {current_price} USDT
-Data Source: Fresh 1H OHLCV data from Binance API (20 candles)
-Line Breakout + EMA7 analysis on 1H timeframe
+Data Source: Fresh 1H OHLCV data from Binance API (100 candles)
+Linear Regression Channel analysis on 1H timeframe
 
-Python Line Breakout + EMA7 Detector Results:
+Python Linear Regression Channel Detector Results:
 {patterns_summary if patterns_summary else "No specific pattern data provided"}
 
-⚠️ 🎯 **CRITICAL REQUIREMENT - FRESH LINE BREAKOUT + EMA7 ONLY:**
-   - ⏰ **เฉพาะ Line Breakout ใน 7 แท่งเทียนย้อนหลังเท่านั้น** (แท่งที่ 1-7 จากปัจจุบัน)
+⚠️ 🎯 **CRITICAL REQUIREMENT - LINEAR REGRESSION CHANNEL BREAKOUT:**
+   - ⏰ **เฉพาะ Channel Breakout ใน 7 แท่งเทียนย้อนหลังเท่านั้น** (แท่งที่ 1-7 จากปัจจุบัน)
    - 🚫 **ห้าม trade breakouts ที่เกิดขึ้นมากกว่า 7 แท่งเทียนแล้ว**
-   - ✅ **ต้องเป็น Fresh Line Breakout + EMA7 confirmation เท่านั้น**
+   - ✅ **ต้องเป็น Fresh Channel Breakout เท่านั้น**
 
-1. 📊 LINE BREAKOUT + EMA7 CALCULATION
-   - **เส้นบน (Upper Line)**: จากจุดสูงสุดใน 20 แท่งเทียนย้อนหลัง
-   - **เส้นล่าง (Lower Line)**: จากจุดต่ำสุดใน 20 แท่งเทียนย้อนหลัง
-   - **EMA7**: Exponential Moving Average 7 periods
-   - **Line Direction**: ทิศทางโดยรวมของ upper/lower lines
+1. 📊 LINEAR REGRESSION CHANNEL CALCULATION
+   - **Length**: 100 periods (ใช้ข้อมูล 100 แท่งเทียน)
+   - **Deviation**: 2.0 (standard deviation multiplier)
+   - **Middle Line**: Linear regression line (slope + intercept)
+   - **Upper Channel**: Middle line + (2.0 × standard deviation)
+   - **Lower Channel**: Middle line - (2.0 × standard deviation)
+   - **Slope**: ทิศทางของ trend (positive = uptrend, negative = downtrend)
 
-2. 🎯 LINE BREAKOUT DETECTION (MANDATORY)
+2. 🎯 CHANNEL BREAKOUT DETECTION (MANDATORY)
    - ⏰ **Breakout Timing**: ต้องเกิดขึ้นใน 1-7 แท่งเทียนย้อนหลัง
-   - 📈 **Breakout Up**: แท่งเทียนสีเขียว (close > open) ทับ/ข้ามเส้นบน (Upper Line)
-   - 📉 **Breakout Down**: แท่งเทียนสีแดง (close < open) ทับ/ข้ามเส้นล่าง (Lower Line)
-   - 🔄 **No Old Breakouts**: ไม่รับ breakouts ที่เกิดขึ้นมากกว่า 7 แท่งเทียนแล้ว
+   - 📈 **Upward Breakout**: ราคาปิดข้าม upper channel (LONG signal)
+   - 📉 **Downward Breakout**: ราคาปิดข้าม lower channel (SHORT signal)
+   - 🔄 **Channel Respect**: ราคาเคารพ channel boundaries ก่อนหน้านี้
+   - � **No Old Breakouts**: ไม่รับ breakouts ที่เกิดขึ้นมากกว่า 7 แท่งเทียนแล้ว
 
-3. 🎯 EMA7 CONFIRMATION (MANDATORY)
-   - ✅ **EMA7 Touch**: 2 แท่งเทียนล่าสุด (แท่งที่ 1-2) อย่างน้อย 1 แท่งต้องทับ/ข้าม EMA7
-   - 📈 **For LONG**: ราคาอย่างน้อย 1 แท่งจาก 2 แท่งล่าสุดต้องเหนือ/ทับ EMA7
-   - 📉 **For SHORT**: ราคาอย่างน้อย 1 แท่งจาก 2 แท่งล่าสุดต้องใต้/ทับ EMA7
+3. 🎯 TREND CONFIRMATION (IMPORTANT)
+   - ✅ **Uptrend + Upward Breakout**: slope > 0 + close > upper channel = STRONG LONG
+   - ✅ **Downtrend + Downward Breakout**: slope < 0 + close < lower channel = STRONG SHORT
+   - ⚠️ **Counter-trend Breakouts**: slope และ breakout ทิศทางตรงกันข้าม = CAUTION
+   - � **Sideways Market**: slope ≈ 0 = ความเสี่ยงสูง
 
-4. 📈 ENTRY SIGNALS (HIGH PRECISION)
-   - ✅ **LONG Signal**: Breakout Up ใน 7 แท่งย้อนหลัง + EMA7 confirmation ใน 2 แท่งล่าสุด
-   - ✅ **SHORT Signal**: Breakout Down ใน 7 แท่งย้อนหลัง + EMA7 confirmation ใน 2 แท่งล่าสุด
+4. 📈 ENTRY SIGNALS (BASED ON TRADINGVIEW SCRIPT)
+   - ✅ **LONG Signal**: Fresh upward breakout (close > upper channel) ใน 7 แท่งย้อนหลัง
+   - ✅ **SHORT Signal**: Fresh downward breakout (close < lower channel) ใน 7 แท่งย้อนหลัง
    - 📍 **Entry Price**: ราคาปัจจุบัน
-   - 🛑 **Stop Loss**: ใต้เส้นล่าง (LONG) หรือเหนือเส้นบน (SHORT)
-   - 🎯 **Take Profit**: distance between lines projected from entry
+   - 🛑 **Stop Loss**: Middle line หรือ opposite channel line
+   - 🎯 **Take Profit**: Project channel width from entry point
 
 5. 💯 CONFIDENCE ASSESSMENT (STRICT SCORING)
    - 🕐 **Breakout Freshness (1-10)**: ใหม่มากแค่ไหน (1-3 แท่ง = 10, 4-7 แท่ง = 7-9)
-   - 📊 **EMA7 Confirmation (1-10)**: EMA7 touch ชัดเจนแค่ไหน
-   - 🎯 **Line Quality (1-10)**: ความชัดเจนของ upper/lower lines
-   - 📈 **Line Direction (1-10)**: ทิศทางของ lines สอดคล้องกับ breakout
+   - 📊 **Trend Alignment (1-10)**: slope และ breakout ทิศทางเดียวกัน = 10
+   - 🎯 **Channel Quality (1-10)**: standard deviation และ correlation
+   - 📈 **Volume Confirmation (1-10)**: volume spike ตอน breakout
    - 💯 **Overall Confidence (0-100%)**: ต้อง ≥ 75% เท่านั้น
 
 ⚠️ **REJECTION CRITERIA:**
-   - ❌ Line breakouts ที่เกิดขึ้นมากกว่า 7 แท่งเทียนแล้ว
-   - ❌ ไม่มี EMA7 confirmation ใน 2 แท่งล่าสุด
-   - ❌ ข้อมูลไม่ครบ 20 แท่งเทียนสำหรับคำนวณ lines และ EMA7
-   - ❌ Weak breakout หรือ sideways market
+   - ❌ Channel breakouts ที่เกิดขึ้นมากกว่า 7 แท่งเทียนแล้ว
+   - ❌ Weak channel (standard deviation ต่ำเกินไป)
+   - ❌ ข้อมูลไม่ครบ 100 แท่งเทียนสำหรับคำนวณ regression
+   - ❌ False breakout (ราคากลับเข้า channel ทันที)
    - ❌ Confidence < 75%
 
 Return ONLY JSON:
 {{
   "action": "LONG|SHORT|HOLD",
-  "pattern_detected": "Line Breakout Up|Line Breakout Down|No Breakout",
-  "line_direction": "uptrend|downtrend|sideways",
+  "pattern_detected": "LRC_BREAKOUT_UP|LRC_BREAKOUT_DOWN|NO_BREAKOUT",
+  "trend_direction": "uptrend|downtrend|sideways",
   "confidence": 87,
   "entry_price": {current_price},
   "stop_loss": 44100.25,
   "take_profit": 47500.75,
-  "upper_line": 45200.00,
-  "lower_line": 44800.00,
-  "ema7": 45000.00,
-  "ema7_confirmation": true,
+  "upper_channel": 45200.00,
+  "middle_line": 45000.00,
+  "lower_channel": 44800.00,
+  "slope": 0.000123,
+  "deviation": 150.25,
   "breakout_freshness": 9,
   "breakout_candles_ago": 3,
-  "ema7_touch_recent": "both|candle1|candle2|none",
-  "analysis": "Strong Line Breakout Up detected 3 candles ago with EMA7 confirmation. Green candle broke above upper line at 45200 with recent EMA7 touch..."
-}}"""
+  "volume_confirmation": true,
+  "analysis": "Strong LRC breakout up detected 3 candles ago. Price broke above upper channel with trend alignment and volume confirmation..."
+}}
+
+OHLCV Data (last 100 candles):
+{recent_100}"""
         
         return prompt
     

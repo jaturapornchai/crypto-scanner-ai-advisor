@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Line Breakout + EMA7 Detector - Python Implementation
-Detects Line Breakout signals with EMA7 confirmation based on new strategy.
-Replaces all previous Linear Regression Channel analysis with Line Breakout + EMA7.
+Line Breakout + EMA25 Detector - Python Implementation
+Detects Line Breakout signals with EMA25 confirmation based on new strategy.
+Replaces all previous Linear Regression Channel analysis with Line Breakout + EMA25.
 """
 
 import json
@@ -27,7 +27,7 @@ class OHLCV:
 
 @dataclass
 class PatternResult:
-    """Pattern analysis result - Line Breakout + EMA7 only"""
+    """Pattern analysis result - Line Breakout + EMA25 only"""
     pattern_type: str
     confidence: float
     signal: str  # LONG, SHORT, NEUTRAL
@@ -38,10 +38,10 @@ class PatternResult:
     volume_confirm: bool
     pattern_status: str
     description: str
-    # Line Breakout + EMA7 specific fields
-    ema7_value: float = 0.0
+    # Line Breakout + EMA25 specific fields
+    ema25_value: float = 0.0
     candle_color: str = ""
-    candle_vs_ema7: str = ""
+    candle_vs_ema25: str = ""
     breakout_direction: str = ""
     breakout_candles_ago: int = 999
     has_fresh_breakout: bool = False
@@ -74,19 +74,19 @@ class LRCResult:
     breakout_candle_index: int  # Which candle (1-5) had the breakout
 
 
-class LineBreakoutEMA7Detector:
-    """Line Breakout + EMA7 signal detector"""
+class LineBreakoutEMA25Detector:
+    """Line Breakout + EMA25 signal detector"""
     
     def __init__(self, data: List[OHLCV]):
         self.data = data
         
-    def calculate_ema7(self) -> List[float]:
-        """Calculate 7-period Exponential Moving Average"""
-        if len(self.data) < 7:
+    def calculate_ema25(self) -> List[float]:
+        """Calculate 25-period Exponential Moving Average"""
+        if len(self.data) < 25:
             return []
             
         ema_values = []
-        alpha = 2 / (7 + 1)  # EMA smoothing factor
+        alpha = 2 / (25 + 1)  # EMA smoothing factor
         
         # Initialize with first close price
         ema = self.data[0].close
@@ -134,32 +134,32 @@ class LineBreakoutEMA7Detector:
                 
         return False, "", 999
     
-    def analyze_2_candles_ema7_cross(self, ema_values: List[float]) -> Tuple[bool, str, str]:
+    def analyze_2_candles_ema25_cross(self, ema_values: List[float]) -> Tuple[bool, str, str]:
         """
-        Analyze if any of the 2 latest candles cross EMA7
+        Analyze if any of the 2 latest candles cross EMA25
         Returns: (has_cross, cross_type, cross_details)
         """
         if not ema_values or len(self.data) < 2:
             return False, "", ""
             
-        # Get 2 latest candles and EMA7 values
+        # Get 2 latest candles and EMA25 values
         candle1 = self.data[-1]  # Latest candle
         candle2 = self.data[-2]  # Previous candle
-        ema7_1 = ema_values[-1]  # Latest EMA7
-        ema7_2 = ema_values[-2]  # Previous EMA7
+        ema25_1 = ema_values[-1]  # Latest EMA25
+        ema25_2 = ema_values[-2]  # Previous EMA25
         
-        # Check if candle1 crosses EMA7
+        # Check if candle1 crosses EMA25
         candle1_crosses = (
-            (candle1.low <= ema7_1 <= candle1.high) or  # EMA7 within candle range
-            (candle1.open <= ema7_1 <= candle1.close) or  # EMA7 within body
-            (candle1.close <= ema7_1 <= candle1.open)    # EMA7 within body (red candle)
+            (candle1.low <= ema25_1 <= candle1.high) or  # EMA25 within candle range
+            (candle1.open <= ema25_1 <= candle1.close) or  # EMA25 within body
+            (candle1.close <= ema25_1 <= candle1.open)    # EMA25 within body (red candle)
         )
         
-        # Check if candle2 crosses EMA7
+        # Check if candle2 crosses EMA25
         candle2_crosses = (
-            (candle2.low <= ema7_2 <= candle2.high) or  # EMA7 within candle range
-            (candle2.open <= ema7_2 <= candle2.close) or  # EMA7 within body
-            (candle2.close <= ema7_2 <= candle2.open)    # EMA7 within body (red candle)
+            (candle2.low <= ema25_2 <= candle2.high) or  # EMA25 within candle range
+            (candle2.open <= ema25_2 <= candle2.close) or  # EMA25 within body
+            (candle2.close <= ema25_2 <= candle2.open)    # EMA25 within body (red candle)
         )
         
         # Determine cross details
@@ -249,17 +249,17 @@ class LineBreakoutEMA7Detector:
                 take_profit=0,
                 volume_confirm=False,
                 pattern_status="NONE",
-                description="Not enough data for Line Breakout + EMA7 analysis (need 20+ candles)",
-                ema7_value=0.0,
+                description="Not enough data for Line Breakout + EMA25 analysis (need 20+ candles)",
+                ema25_value=0.0,
                 candle_color="",
-                candle_vs_ema7="",
+                candle_vs_ema25="",
                 breakout_direction="",
                 breakout_candles_ago=999,
                 has_fresh_breakout=False
             )
         
-        # Calculate EMA7
-        ema_values = self.calculate_ema7()
+        # Calculate EMA25
+        ema_values = self.calculate_ema25()
         if not ema_values:
             return None
             
@@ -278,16 +278,16 @@ class LineBreakoutEMA7Detector:
                 volume_confirm=False,
                 pattern_status="NO_BREAKOUT",
                 description="No fresh line breakout detected in last 5 candles",
-                ema7_value=ema_values[-1] if ema_values else 0.0,
+                ema25_value=ema_values[-1] if ema_values else 0.0,
                 candle_color="",
-                candle_vs_ema7="",
+                candle_vs_ema25="",
                 breakout_direction="",
                 breakout_candles_ago=999,
                 has_fresh_breakout=False
             )
         
-        # Analyze 2 latest candles EMA7 cross
-        has_cross, cross_type, cross_details = self.analyze_2_candles_ema7_cross(ema_values)
+        # Analyze 2 latest candles EMA25 cross
+        has_cross, cross_type, cross_details = self.analyze_2_candles_ema25_cross(ema_values)
         
         # Check signal validity
         is_valid_signal, signal = self.check_signal_validity(breakout_direction, has_cross, cross_type)
@@ -343,9 +343,9 @@ class LineBreakoutEMA7Detector:
             volume_confirm=volume_confirm,
             pattern_status=pattern_status,
             description=description,
-            ema7_value=ema_values[-1] if ema_values else 0.0,
+            ema25_value=ema_values[-1] if ema_values else 0.0,
             candle_color="N/A",  # No longer using candle color
-            candle_vs_ema7=cross_type,  # Use cross_type instead
+            candle_vs_ema25=cross_type,  # Use cross_type instead
             breakout_direction=breakout_direction,
             breakout_candles_ago=candles_ago,
             has_fresh_breakout=has_breakout and candles_ago <= 7  # Changed from 5 to 7
@@ -353,14 +353,14 @@ class LineBreakoutEMA7Detector:
 
 
 class ChartPatternAnalyzer:
-    """Chart pattern analyzer for Line Breakout + EMA7 detection"""
+    """Chart pattern analyzer for Line Breakout + EMA25 detection"""
     
     def __init__(self, data: List[OHLCV]):
         self.data = data
         
     def analyze_patterns(self) -> List[PatternResult]:
         """Analyze Line Breakout + EMA7 patterns only"""
-        detector = LineBreakoutEMA7Detector(self.data)
+        detector = LineBreakoutEMA25Detector(self.data)
         result = detector.detect_signal()
         
         if result:
@@ -376,10 +376,10 @@ class ChartPatternAnalyzer:
                 take_profit=0,
                 volume_confirm=False,
                 pattern_status="NONE",
-                description="No Line Breakout + EMA7 signal detected",
-                ema7_value=0.0,
+                description="No Line Breakout + EMA25 signal detected",
+                ema25_value=0.0,
                 candle_color="",
-                candle_vs_ema7="",
+                candle_vs_ema25="",
                 breakout_direction="",
                 breakout_candles_ago=999,
                 has_fresh_breakout=False
@@ -387,7 +387,7 @@ class ChartPatternAnalyzer:
 
 
 class PatternDetector:
-    """Main pattern detector class for Line Breakout + EMA7 strategy"""
+    """Main pattern detector class for Line Breakout + EMA25 strategy"""
     
     def __init__(self):
         pass
@@ -460,9 +460,9 @@ class PatternDetector:
                 'volume_confirm': best_result.volume_confirm,
                 'pattern_status': best_result.pattern_status,
                 'description': best_result.description,
-                'ema7_value': best_result.ema7_value,
+                'ema25_value': best_result.ema25_value,
                 'candle_color': best_result.candle_color,
-                'candle_vs_ema7': best_result.candle_vs_ema7,
+                'candle_vs_ema25': best_result.candle_vs_ema25,
                 'breakout_direction': best_result.breakout_direction,
                 'breakout_candles_ago': best_result.breakout_candles_ago,
                 'has_fresh_breakout': best_result.has_fresh_breakout

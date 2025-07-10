@@ -26,6 +26,8 @@ class ExchangeClient:
                 'defaultType': 'future',  # ใช้ futures trading
                 'warnOnFetchOpenOrdersWithoutSymbol': False,  # ปิด warning
             },
+            'rateLimit': 1200,  # ลดจาก default เป็น 1.2 วินาที (เคยเป็น 50ms)
+            'enableRateLimit': True,  # เปิด rate limiting
         })
         
         # โหลด markets

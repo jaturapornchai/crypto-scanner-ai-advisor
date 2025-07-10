@@ -20,13 +20,13 @@
 - **Exchange**: เชื่อมต่อกับ Binance Futures
 - **โมดูล**: แยก file โค้ดให้เป็นโมดูลย่อย
 - **Main File**: ไฟล์หลักอยู่ที่ `app.py`
-- **Pattern Detection**: ใช้ Line Breakout + EMA7 Confirmation เท่านั้น (ไม่มี Go dependencies)
+- **Pattern Detection**: ใช้ Line Breakout + EMA25 Confirmation เท่านั้น (ไม่มี Go dependencies)
 
 ### 📊 การตั้งค่าการเทรด
 
-- **Time Frame**: 1H เท่านั้น (สำหรับ Line Breakout + EMA7 Analysis)
+- **Time Frame**: 1H เท่านั้น (สำหรับ Line Breakout + EMA25 Analysis)
 - **Data Source**: ดึงจาก Binance API ใหม่ทุกครั้ง (ไม่ใช้ cache)
-- **Data Amount**: ดึงเฉพาะข้อมูลที่จำเป็น (20 แท่งเทียน 1H สำหรับ EMA7 + Breakout Detection)
+- **Data Amount**: ดึงเฉพาะข้อมูลที่จำเป็น (50 แท่งเทียน 1H สำหรับ EMA25 + Breakout Detection)
 - **Position Size**: 20 USDT
 - **Leverage**: 10x
 - **Margin Type**: Isolated
@@ -34,44 +34,44 @@
 - **เงินจริง**: ใช้เงินจริงทุกขั้นตอน ไม่ต้องถาม ทำงานไปเลย
 - **Console**: แสดงรายละเอียดการทำงานของระบบที่ console เพื่อตรวจสอบ
 
-## 🎯 Line Breakout + EMA7 Signals (Updated Strategy)
+## 🎯 Line Breakout + EMA25 Signals (Updated Strategy)
 
-### 📈 Line Breakout + EMA7 Analysis
+### 📈 Line Breakout + EMA25 Analysis
 
 #### 🔧 **Technical Parameters**
-- **EMA Period**: 7 periods (Exponential Moving Average)
+- **EMA Period**: 25 periods (Exponential Moving Average)
 - **Breakout Detection**: ใน 7 timeframe ล่าสุด
-- **EMA7 Confirmation**: 2 แท่งเทียนล่าสุดทับเส้น EMA7 (แท่งใดแท่งหนึ่ง)
+- **EMA25 Confirmation**: 2 แท่งเทียนล่าสุดทับเส้น EMA25 (แท่งใดแท่งหนึ่ง)
 - **Time Frame**: 1H เท่านั้น
 
 #### 📊 **Signal Components**
-- **EMA7 Line** - เส้น Exponential Moving Average 7 periods
-- **Price Action** - การเคลื่อนไหวของราคา relative to EMA7
-- **2 Candle Confirmation** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
+- **EMA25 Line** - เส้น Exponential Moving Average 25 periods
+- **Price Action** - การเคลื่อนไหวของราคา relative to EMA25
+- **2 Candle Confirmation** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
 
 ### 🎯 **Signal Detection**
 
-#### 📈 **LONG Signals (Line Breakout Up + EMA7 Cross)**
+#### 📈 **LONG Signals (Line Breakout Up + EMA25 Cross)**
 - **Line Breakout Up** - แท่งเทียนสีเขียว ทับเส้นบน ใน 7 timeframe ล่าสุด
-- **EMA7 Cross** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
+- **EMA25 Cross** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
 - **Signal**: LONG entry
 
-#### 📉 **SHORT Signals (Line Breakout Down + EMA7 Cross)**
+#### 📉 **SHORT Signals (Line Breakout Down + EMA25 Cross)**
 - **Line Breakout Down** - แท่งเทียนสีแดง ทับเส้นล่าง ใน 7 timeframe ล่าสุด
-- **EMA7 Cross** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
+- **EMA25 Cross** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
 - **Signal**: SHORT entry
 
 ### 📊 การวิเคราะห์ (Enhanced Accuracy)
 
-- ใช้ **1H timeframe เท่านั้น** (7 periods สำหรับ EMA calculation)
+- ใช้ **1H timeframe เท่านั้น** (25 periods สำหรับ EMA calculation)
 - เฉพาะเหรียญที่มี **USDT** เป็น quote asset
-- **Line Breakout + EMA7 Analysis** แทน Chart Patterns
+- **Line Breakout + EMA25 Analysis** แทน Chart Patterns
 - **🎯 เฉพาะ Line Breakout ใน 7 timeframe ล่าสุด** - ไม่สนใจ breakouts ที่เก่าแล้ว
-- **🔍 EMA7 Confirmation** - ต้องมีการยืนยันด้วย 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
+- **🔍 EMA25 Confirmation** - ต้องมีการยืนยันด้วย 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
 - **📊 2 Candle Analysis** - วิเคราะห์ 2 แท่งเทียนล่าสุด
 - **⏰ Fresh Breakout Only** - breakout ภายใน 7 timeframe ย้อนหลังเท่านั้น
 
-## 🤖 โครงสร้าง AI Line Breakout + EMA7 Analysis
+## 🤖 โครงสร้าง AI Line Breakout + EMA25 Analysis
 
 ### 📥 Input Data Format (Direct API)
 
@@ -81,32 +81,32 @@ Current Price: {current_price} USDT
 Data Source: Binance API Direct
 Fresh Data: Just fetched
 
-1H Timeframe Data (20 candles - fresh from API):
-- OHLCV: {ohlcv_1h_fresh_20}
+1H Timeframe Data (50 candles - fresh from API):
+- OHLCV: {ohlcv_1h_fresh_50}
 - Real-time Data: No cache, always current
 
-Line Breakout + EMA7 Analysis Required
-- EMA Period: 7
+Line Breakout + EMA25 Analysis Required
+- EMA Period: 25
 - Breakout Detection: Last 7 timeframes
-- EMA7 Cross Analysis: 2 latest candles vs EMA7
+- EMA25 Cross Analysis: 2 latest candles vs EMA25
 ```
 
-### 🧠 AI Analysis Prompt (Line Breakout + EMA7 - Fresh Breakout Only)
+### 🧠 AI Analysis Prompt (Line Breakout + EMA25 - Fresh Breakout Only)
 
 ```text
-คุณเป็น Professional Line Breakout + EMA7 Analyst ให้วิเคราะห์ข้อมูลตาม Strategy ใหม่:
+คุณเป็น Professional Line Breakout + EMA25 Analyst ให้วิเคราะห์ข้อมูลตาม Strategy ใหม่:
 
-🔍 คุณมีข้อมูลใหม่ล่าสุด 20 แท่งเทียนสำหรับ 1H timeframe (ดึงจาก API ใหม่)
+🔍 คุณมีข้อมูลใหม่ล่าสุด 50 แท่งเทียนสำหรับ 1H timeframe (ดึงจาก API ใหม่)
 
-⚠️ 🎯 **CRITICAL REQUIREMENT - LINE BREAKOUT + EMA7 STRATEGY:**
+⚠️ 🎯 **CRITICAL REQUIREMENT - LINE BREAKOUT + EMA25 STRATEGY:**
    - ⏰ **เฉพาะ Line Breakout ใน 7 timeframe ล่าสุดเท่านั้น** (timeframe ที่ 1-7 จากปัจจุบัน)
    - 🚫 **ห้าม trade breakouts ที่เกิดขึ้นมากกว่า 7 timeframe แล้ว**
-   - ✅ **ต้องเป็น Fresh Line Breakout + EMA7 Confirmation เท่านั้น**
+   - ✅ **ต้องเป็น Fresh Line Breakout + EMA25 Confirmation เท่านั้น**
 
-1. 📊 EMA7 CALCULATION
-   - **EMA Period**: 7 periods สำหรับการคำนวณ Exponential Moving Average
+1. 📊 EMA25 CALCULATION
+   - **EMA Period**: 25 periods สำหรับการคำนวณ Exponential Moving Average
    - **Source**: Close Price
-   - คำนวณ EMA7 สำหรับ 20 แท่งเทียนล่าสุด
+   - คำนวณ EMA25 สำหรับ 50 แท่งเทียนล่าสุด
 
 2. 🎯 LINE BREAKOUT DETECTION (MANDATORY)
    - ⏰ **Breakout Timing Check** - ต้องเกิดขึ้นใน 1-7 timeframe ย้อนหลัง
@@ -114,23 +114,23 @@ Line Breakout + EMA7 Analysis Required
    - 📉 **Line Breakout Down**: แท่งเทียนสีแดง ทับเส้นล่าง ใน 7 timeframe ล่าสุด
    - 🔄 **No Old Breakouts** - ไม่รับ breakouts ที่เกิดขึ้นมากกว่า 7 timeframe แล้ว
 
-3. 📈 EMA7 CROSS CONFIRMATION (HIGH PRECISION)
-   - ✅ **LONG Signal**: Line Breakout Up (แท่งเทียนสีเขียว ทับเส้นบน) + 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
-   - ✅ **SHORT Signal**: Line Breakout Down (แท่งเทียนสีแดง ทับเส้นล่าง) + 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
+3. 📈 EMA25 CROSS CONFIRMATION (HIGH PRECISION)
+   - ✅ **LONG Signal**: Line Breakout Up (แท่งเทียนสีเขียว ทับเส้นบน) + 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
+   - ✅ **SHORT Signal**: Line Breakout Down (แท่งเทียนสีแดง ทับเส้นล่าง) + 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
    - 📍 **Entry Price** - ราคาปัจจุบัน
-   - 🛑 **Stop Loss** - 2% จากราคา entry
-   - 🎯 **Take Profit** - 4% จากราคา entry
+   - 🛑 **Smart Stop Loss** - แนวรับ/แนวต้าน หรือ 5% fallback
+   - 🎯 **Smart Take Profit** - แนวต้าน/แนวรับ หรือ 15% fallback
 
 4. 💯 CONFIDENCE ASSESSMENT (STRICT SCORING)
    - 🕐 **Breakout Freshness (1-10)** - ใหม่มากแค่ไหน (1-7 timeframe = 10 คะแนน)
-   - 📊 **EMA7 Cross (1-10)** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA7
-   - 🎯 **Cross Quality (1-10)** - คุณภาพการทับเส้น EMA7
+   - 📊 **EMA25 Cross (1-10)** - 2 แท่งเทียนล่าสุด แท่งใดแท่งหนึ่งทับเส้น EMA25
+   - 🎯 **Cross Quality (1-10)** - คุณภาพการทับเส้น EMA25
    - 📈 **Breakout Strength (1-10)** - ความแรงของ breakout
    - 💯 **Overall Confidence (0-100%)** - ต้อง ≥ 85% เท่านั้น
 
 ⚠️ **REJECTION CRITERIA:**
    - ❌ Line breakouts ที่เกิดขึ้นมากกว่า 7 timeframe แล้ว
-   - ❌ 2 แท่งเทียนล่าสุดไม่มีแท่งใดทับเส้น EMA7
+   - ❌ 2 แท่งเทียนล่าสุดไม่มีแท่งใดทับเส้น EMA25
    - ❌ Cross quality ต่ำ หรือ false cross
    - ❌ Weak breakout หรือ false breakout
    - ❌ Confidence < 85%
@@ -343,3 +343,33 @@ python main_trading.py
 **หมายเหตุ: ระบบนี้ใช้เงินจริงในการเทรด และเปิด positions จนกว่าเงินจะหมด**
 
 พยายามลบไฟล์ที่ไม่เกี่ยวข้องออกเสมอ และทำให้โค้ดสะอาดที่สุดเท่าที่จะทำได้
+
+### 🎯 **Smart TP/SL Algorithm (Updated)**
+
+#### 📊 **Support & Resistance Detection**
+- **Lookback Period**: 50 candles (1H timeframe)
+- **Pivot Detection**: 5-candle window รอบๆ จุด pivot
+- **Touch Threshold**: 0.2% ความผิดพลาดในการนับ touch
+- **Minimum Touches**: 2 ครั้ง เพื่อยืนยันแนวรับ-แนวต้าน
+- **Relevance Range**: แนวรับ-แนวต้านต้องอยู่ภายใน 10% จากราคาปัจจุบัน
+
+#### 🎯 **Take Profit Strategy**
+- **LONG Position**:
+  - **Primary**: แนวต้าน (Resistance) - 0.5% เพื่อให้โอกาส execution
+  - **Fallback**: +15% จากราคา entry หากไม่มีแนวต้านที่ชัดเจน
+- **SHORT Position**:
+  - **Primary**: แนวรับ (Support) + 0.5% เพื่อให้โอกาส execution
+  - **Fallback**: -15% จากราคา entry หากไม่มีแนวรับที่ชัดเจน
+
+#### 🛑 **Stop Loss Strategy**
+- **LONG Position**:
+  - **Primary**: แนวรับ (Support) - 0.5% เพื่อป้องกัน false breakout
+  - **Fallback**: -5% จากราคา entry หากไม่มีแนวรับที่ชัดเจน
+- **SHORT Position**:
+  - **Primary**: แนวต้าน (Resistance) + 0.5% เพื่อป้องกัน false breakout
+  - **Fallback**: +5% จากราคา entry หากไม่มีแนวต้านที่ชัดเจน
+
+#### ✅ **Validation Rules**
+- TP ต้องอยู่ในทิศทางที่ถูกต้อง (LONG: TP > Entry, SHORT: TP < Entry)
+- SL ต้องอยู่ในทิศทางที่ถูกต้อง (LONG: SL < Entry, SHORT: SL > Entry)
+- หาก TP/SL ไม่สมเหตุสมผล จะใช้ fallback percentage

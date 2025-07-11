@@ -30,8 +30,8 @@
 
 ### Step 4: Trade Execution
 - Open positions only for AI-confirmed breakouts
-- Set leverage 10x, margin isolated
-- Position size 10 USDT
+- Set leverage 5x, margin isolated
+- Position size 50 USDT
 
 ## 📊 LRC Technical Parameters
 

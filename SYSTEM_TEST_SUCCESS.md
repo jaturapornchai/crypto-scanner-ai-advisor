@@ -37,8 +37,8 @@
 - **LRC Parameters**: Length=100, Deviation=2.0 ✅
 - **Fresh Breakout**: 5 แท่งเทียนย้อนหลัง ✅
 - **Confidence**: ≥ 85% ✅
-- **Position Size**: 10 USDT ✅
-- **Leverage**: 10x ✅
+- **Position Size**: 50 USDT ✅
+- **Leverage**: 5x ✅
 
 #### Trading Rules
 - **Real Money**: ใช้เงินจริงในการเทรด ✅

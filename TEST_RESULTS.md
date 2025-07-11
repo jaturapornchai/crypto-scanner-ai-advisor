@@ -41,8 +41,8 @@
 - **Time Frame**: 1H เท่านั้น
 - **Length**: 100 periods สำหรับ LR calculation
 - **Deviation**: 2.0 สำหรับ channel boundaries
-- **Position Size**: 10 USDT
-- **Leverage**: 10x
+- **Position Size**: 50 USDT
+- **Leverage**: 5x
 - **Margin Type**: Isolated
 
 ## 🚀 วิธีรันระบบ

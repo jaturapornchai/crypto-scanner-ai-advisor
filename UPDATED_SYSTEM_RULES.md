@@ -27,8 +27,8 @@
 - **Time Frame**: 1H เท่านั้น (สำหรับ Linear Regression Channel Analysis)
 - **Historical Data**: เก็บข้อมูลมากที่สุด (1000 แท่งเทียน) ใน JSON
 - **Data Storage**: `/historical_data` folder สำหรับวิเคราะห์ต่อเนื่อง
-- **Position Size**: 10 USDT
-- **Leverage**: 10x
+- **Position Size**: 50 USDT
+- **Leverage**: 5x
 - **Margin Type**: Isolated
 - **AI Engine**: DEEPSEEK AI
 - **เงินจริง**: ใช้เงินจริงทุกขั้นตอน ไม่ต้องถาม ทำงานไปเลย
@@ -59,7 +59,7 @@
 #### 1. ตรวจสอบ Balance แทน Position Limit
 
 - **ตรวจสอบ balance ว่าเพียงพอสำหรับ position ใหม่หรือไม่**
-- **ถ้า balance < 10 USDT (position size)** ให้หยุดรอไปที่ LOOP1 ใหม่ **ในนาทีแรกของชั่วโมงถัดไป**
+- **ถ้า balance < 50 USDT (position size)** ให้หยุดรอไปที่ LOOP1 ใหม่ **ในนาทีแรกของชั่วโมงถัดไป**
 - **เปิด positions ไปเรื่อยๆ จนกว่าเงินจะหมด** (ไม่จำกัด 20 positions)
 
 #### 2. กรอง Linear Regression Channel Breakout (Python) + ระบบประหยัด API
@@ -89,7 +89,7 @@
 
 ##### 3.1 ตั้งค่า Leverage และ Margin
 
-- **ถ้าเหรียญ leverage ไม่เท่ากับ 10x** ให้ตั้ง leverage เป็น 10x
+- **ถ้าเหรียญ leverage ไม่เท่ากับ 5x** ให้ตั้ง leverage เป็น 5x
 - **ถ้าเหรียญ margin type ไม่ใช่ isolated** ให้เปลี่ยนเป็น isolated
 
 ##### 3.2 วิเคราะห์ Linear Regression Channel ด้วย AI
@@ -121,7 +121,7 @@
 6. **📊 Volume Spike ≥ 150%** - volume เพิ่มขึ้นตอน breakout
 7. **🔍 Channel Data Complete** - ต้องมีข้อมูล 100 แท่งเทียนเต็ม
 8. **AI ให้ action = "LONG" หรือ "SHORT" (ไม่ใช่ "HOLD")**
-9. **Leverage ตั้งเป็น 10x**
+9. **Leverage ตั้งเป็น 5x**
 10. **Margin type เป็น isolated**
 
 ### 📊 Linear Regression Channel Detection (Pure Python)

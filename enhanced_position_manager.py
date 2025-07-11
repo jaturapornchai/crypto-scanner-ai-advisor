@@ -85,8 +85,8 @@ class EnhancedPositionManager:
             self.smart_tp_sl = None
         
         # Trading parameters
-        self.position_size_usdt = 20  # 20 USDT per position (เพิ่มจาก 10)
-        self.leverage = 10  # 10x leverage
+        self.position_size_usdt = 100  # 100 USDT per position
+        self.leverage = 5  # 5x leverage
         self.confidence_threshold = 75  # 75% confidence threshold สำหรับ Linear Regression Channel
         self.last_signal_type = None  # Store last signal type for AI
         self.first_loop_done = False  # ติดตาม LOOP1 ครั้งแรก
@@ -373,7 +373,7 @@ class EnhancedPositionManager:
             print(f"🔄 เปิด position {symbol} {side.upper()} quantity: {quantity}")
             
             # ตั้งค่า leverage และ margin mode ก่อนเปิด position
-            print(f"🔧 ตั้งค่า leverage 10x และ margin isolated สำหรับ {symbol}")
+            print(f"🔧 ตั้งค่า leverage 5x และ margin isolated สำหรับ {symbol}")
             try:
                 self.set_leverage(symbol, self.leverage)
                 self.set_margin_mode(symbol, 'isolated')

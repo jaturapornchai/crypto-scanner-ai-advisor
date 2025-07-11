@@ -56,8 +56,8 @@ This crypto trading system uses **Linear Regression Channel analysis only** for 
 
 ### Phase 4: Execution
 - Open positions for confirmed signals
-- Set 10x leverage, isolated margin
-- Position size: 10 USDT
+- Set 5x leverage, isolated margin
+- Position size: 50 USDT
 - Set stop loss and take profit
 
 ## 📁 Key Files

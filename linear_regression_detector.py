@@ -67,7 +67,7 @@ def create_sample_config_files():
     """สร้างไฟล์ config ตัวอย่างถ้าไม่มี"""
     configs = {
         "configs/trading_config.json": {
-            "position_size_usdt": 20,
+            "position_size_usdt": 100,
             "max_positions": 99999,
             "use_all_capital": True,
             "unlimited_capital": True,
@@ -140,7 +140,7 @@ def create_readme_files():
 - `ai_config.json` - การตั้งค่า AI
 
 ## trading_config.json Parameters:
-- `position_size_usdt`: ขนาด position ต่อครั้ง (20 USDT)
+- `position_size_usdt`: ขนาด position ต่อครั้ง (100 USDT)
 - `max_positions`: จำนวน position สูงสุด (99999 = ไม่จำกัด)
 - `use_all_capital`: ใช้เงินทุนหมด (true/false)
 - `unlimited_capital`: เปิด position ไม่จำกัดเงิน (true/false)

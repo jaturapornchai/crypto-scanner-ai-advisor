@@ -1,5 +1,5 @@
 {
-  "position_size_usdt": 20,
+  "position_size_usdt": 100,
   "max_positions": 99999,
   "use_all_capital": true,
   "unlimited_capital": true,

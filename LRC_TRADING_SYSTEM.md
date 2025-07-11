@@ -56,7 +56,7 @@
 ### 3. Trading Decision
 - เปิด position เฉพาะ confidence ≥ 85%
 - ตั้ง stop loss และ take profit ตาม channel width
-- Leverage 10x, Margin isolated, Position size 10 USDT
+- Leverage 5x, Margin isolated, Position size 50 USDT
 
 ## 📁 File Structure (Updated)
 

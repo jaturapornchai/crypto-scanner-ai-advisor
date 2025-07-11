@@ -107,12 +107,22 @@ AI must score each factor 1-10 and calculate final confidence:
 Formula: (Sum of 6 scores ÷ 6) × 10 = Confidence %
 Example: [9,8,8,7,9,8] → Average 8.17 × 10 = 82%
 
+RISK-REWARD VALIDATION (MANDATORY):
+Calculate profit potential vs loss risk:
+- Profit = |Take Profit - Entry Price|
+- Loss = |Entry Price - Stop Loss|  
+- Risk-Reward Ratio = Profit ÷ Loss
+
+**RULE: If Profit ≤ Loss (Risk-Reward ≤ 1.0), then action = "HOLD"**
+Example: Entry=100, TP=102, SL=97 → Profit=2, Loss=3 → Ratio=0.67 → HOLD
+
 RULES:
 - LONG: Close > Upper Channel within 5 candles
 - SHORT: Close < Lower Channel within 5 candles  
 - SL: Middle line or opposite channel
 - TP: Entry ± (channel width × 1.5-2.0)
 - Minimum confidence: 80%
+- Minimum Risk-Reward Ratio: 1.0
 
 Return JSON:
 {{
@@ -127,8 +137,12 @@ Return JSON:
   "channel_width_quality_score": 8,
   "stop_loss": 44100.25,
   "take_profit": 47500.75,
+  "entry_price": 45000.0,
+  "profit_potential": 2500.75,
+  "loss_risk": 899.75,
+  "risk_reward_ratio": 2.78,
   "breakout_candles_ago": 2,
-  "analysis": "UP breakout 2 candles ago. Scores [9,8,8,7,9,8] = 82% confidence."
+  "analysis": "UP breakout 2 candles ago. Scores [9,8,8,7,9,8] = 82% confidence. Risk-Reward 2.78:1 GOOD."
 }}
 
 OHLCV Data: {recent_100}"""
@@ -179,9 +193,12 @@ OHLCV Data: {recent_100}"""
                 confidence = result.get('confidence', 0)  # AI calculated confidence
                 stop_loss = result.get('stop_loss', 0)
                 take_profit = result.get('take_profit', 0)
+                entry_price = result.get('entry_price', 0)
+                profit_potential = result.get('profit_potential', 0)
+                loss_risk = result.get('loss_risk', 0)
+                risk_reward_ratio = result.get('risk_reward_ratio', 0)
                 pattern_detected = result.get('pattern_detected', 'None')
                 pattern_strength = result.get('pattern_strength', 0)
-                entry_price = result.get('entry_price', 0)
                 pattern_target = result.get('pattern_target', 0)
                 volume_confirmation = result.get('volume_confirmation', False)
                 analysis = result.get('analysis', 'AI Channel Analysis')
@@ -195,8 +212,15 @@ OHLCV Data: {recent_100}"""
                 channel_width_quality_score = result.get('channel_width_quality_score', 0)
                 confidence_calculation = result.get('confidence_calculation', 'AI calculated')
                 
-                # ตรวจสอบ AI calculated confidence threshold
-                if confidence < 75 and action != "HOLD":
+                # ตรวจสอบ Risk-Reward Ratio ก่อน (Priority #1)
+                if action != "HOLD" and risk_reward_ratio >= 0 and risk_reward_ratio < 1.0:
+                    print(f"    ❌ Risk-Reward Ratio {risk_reward_ratio:.2f} < 1.0 - แก้ไขเป็น HOLD")
+                    print(f"    📊 Profit: {profit_potential:.2f}, Loss: {loss_risk:.2f} → กำไรน้อยกว่าขาดทุน")
+                    action = "HOLD"
+                    confidence = 0
+                
+                # ตรวจสอบ AI calculated confidence threshold (Priority #2)
+                elif confidence < 75 and action != "HOLD":
                     print(f"    ⚠️  AI Calculated Confidence {confidence}% < 75% - แก้ไขเป็น HOLD")
                     print(f"    📊 AI Scoring: Fresh={breakout_freshness_score}, Trend={trend_alignment_score}, Quality={channel_quality_score}")
                     print(f"    📊 Volume={volume_confirmation_score}, Strength={price_action_strength_score}, Width={channel_width_quality_score}")
@@ -211,9 +235,12 @@ OHLCV Data: {recent_100}"""
                     "confidence": confidence if action != "HOLD" else 0,
                     "stop_loss": stop_loss if action != "HOLD" else 0,
                     "take_profit": take_profit if action != "HOLD" else 0,
+                    "entry_price": entry_price,
+                    "profit_potential": profit_potential,
+                    "loss_risk": loss_risk,
+                    "risk_reward_ratio": risk_reward_ratio,
                     "pattern_detected": pattern_detected,
                     "pattern_strength": pattern_strength,
-                    "entry_price": entry_price,
                     "pattern_target": pattern_target,
                     "volume_confirmation": volume_confirmation,
                     "analysis": analysis,

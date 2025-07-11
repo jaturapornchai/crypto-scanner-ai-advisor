@@ -42,8 +42,8 @@
 
 ### 3. Trade Execution
 - เปิด position เฉพาะที่ AI confidence ≥ 85%
-- ตั้ง leverage 10x และ margin type isolated
-- Position size 10 USDT
+- ตั้ง leverage 5x และ margin type isolated
+- Position size 50 USDT
 
 ## 📁 Main Files
 

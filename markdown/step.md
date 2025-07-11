@@ -27,8 +27,8 @@
 - **Time Frame**: 1H เท่านั้น (สำหรับ Line Breakout + EMA25 Analysis)
 - **Data Source**: ดึงจาก Binance API ใหม่ทุกครั้ง (ไม่ใช้ cache)
 - **Data Amount**: ดึงเฉพาะข้อมูลที่จำเป็น (50 แท่งเทียน 1H สำหรับ EMA25 + Breakout Detection)
-- **Position Size**: 20 USDT
-- **Leverage**: 10x
+- **Position Size**: 50 USDT
+- **Leverage**: 5x
 - **Margin Type**: Isolated
 - **AI Engine**: DEEPSEEK AI
 - **เงินจริง**: ใช้เงินจริงทุกขั้นตอน ไม่ต้องถาม ทำงานไปเลย
@@ -203,7 +203,7 @@ Line Breakout + EMA25 Analysis Required
 #### 1. ตรวจสอบ Balance แทน Position Limit (อัปเดต)
 
 - **ตรวจสอบ balance ว่าเพียงพอสำหรับ position ใหม่หรือไม่**
-- **ถ้า balance < 10 USDT (position size)** ให้หยุดรอไปที่ LOOP1 ใหม่ **ในนาทีแรกของชั่วโมงถัดไป**
+- **ถ้า balance < 50 USDT (position size)** ให้หยุดรอไปที่ LOOP1 ใหม่ **ในนาทีแรกของชั่วโมงถัดไป**
 - **เปิด positions ไปเรื่อยๆ จนกว่าเงินจะหมด** (ไม่จำกัด 20 positions)
 
 #### 2. กรอง Line Breakout + EMA7 (Python) + Direct API
@@ -228,7 +228,7 @@ Line Breakout + EMA25 Analysis Required
 
 ##### 3.1 ตั้งค่า Leverage และ Margin
 
-- **ถ้าเหรียญ leverage ไม่เท่ากับ 10x** ให้ตั้ง leverage เป็น 10x
+- **ถ้าเหรียญ leverage ไม่เท่ากับ 5x** ให้ตั้ง leverage เป็น 5x
 - **ถ้าเหรียญ margin type ไม่ใช่ isolated** ให้เปลี่ยนเป็น isolated
 
 ##### 3.2 วิเคราะห์ Chart Pattern ด้วย AI
@@ -252,14 +252,14 @@ Line Breakout + EMA25 Analysis Required
 ### ✅ เงื่อนไขที่ต้องผ่าน
 
 1. **ไม่มี position เปิดอยู่แล้วในเหรียญนั้น**
-2. **Balance เพียงพอ (≥ 20 USDT)** - ไม่จำกัด 20 positions แล้ว
+2. **Balance เพียงพอ (≥ 50 USDT)** - ไม่จำกัด 20 positions แล้ว
 3. **AI ตรวจพบ Line Breakout + EMA7 Signal ที่ชัดเจน (Python)**
 4. **AI Confidence ≥ 75%** (ลดจาก 85%)
 5. **🎯 Fresh Line Breakout Only** - breakout ใน 7 แท่งเทียนย้อนหลัง
 6. **📊 Volume Spike ≥ 150%** - volume เพิ่มขึ้นตอน breakout
 7. **🔍 Data Complete** - ต้องมีข้อมูล 20 แท่งเทียนเต็ม
 8. **AI ให้ action = "LONG" หรือ "SHORT" (ไม่ใช่ "HOLD")**
-9. **Leverage ตั้งเป็น 10x**
+9. **Leverage ตั้งเป็น 5x**
 10. **Margin type เป็น isolated**
 
 ### 📊 ข้อมูลที่ต้องใช้ (Direct API)
@@ -306,7 +306,7 @@ Back to Main Loop (Next Hour)
 
 - **ไม่ duplicate positions**
 - **เปิด positions จนกว่าเงินจะหมด** (ไม่จำกัด 20 แล้ว)
-- **Position Size 20 USDT per trade** (เพิ่มจาก 10 USDT)
+- **Position Size 50 USDT per trade** (เพิ่มจาก 20 USDT)
 - **Line Breakout + EMA7 เป็นตัวกรองหลัก (Pure Python)**
 - **AI Confidence > 75% เท่านั้น** (ลดจาก 85%)
 - **AI decision เป็น JSON เท่านั้น**

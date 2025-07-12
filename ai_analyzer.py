@@ -119,10 +119,16 @@ Example: Entry=100, TP=102, SL=97 → Profit=2, Loss=3 → Ratio=0.67 → HOLD
 RULES:
 - LONG: Close > Upper Channel within 5 candles
 - SHORT: Close < Lower Channel within 5 candles  
-- SL: Middle line or opposite channel
-- TP: Entry ± (channel width × 1.5-2.0)
+- SL: Very Conservative (much closer to entry) - Entry ± (channel width × 0.2-0.3) for minimal risk
+- TP: Very Aggressive (much further from entry) - Entry ± (channel width × 3.0-5.0) for maximum profit
 - Minimum confidence: 80%
-- Minimum Risk-Reward Ratio: 1.0
+- Minimum Risk-Reward Ratio: 3.0 (TP distance must be 3x SL distance)
+
+**STRICT SL/TP CALCULATION EXAMPLES:**
+- Channel Width = 1000 USDT, Entry = 45000
+- LONG: SL = 45000 - (1000 × 0.25) = 44750, TP = 45000 + (1000 × 4.0) = 49000
+- SHORT: SL = 45000 + (1000 × 0.25) = 45250, TP = 45000 - (1000 × 4.0) = 41000
+- This gives Risk-Reward = 4000/250 = 16:1 ratio
 
 Return JSON:
 {{
@@ -213,9 +219,9 @@ OHLCV Data: {recent_100}"""
                 confidence_calculation = result.get('confidence_calculation', 'AI calculated')
                 
                 # ตรวจสอบ Risk-Reward Ratio ก่อน (Priority #1)
-                if action != "HOLD" and risk_reward_ratio >= 0 and risk_reward_ratio < 1.0:
-                    print(f"    ❌ Risk-Reward Ratio {risk_reward_ratio:.2f} < 1.0 - แก้ไขเป็น HOLD")
-                    print(f"    📊 Profit: {profit_potential:.2f}, Loss: {loss_risk:.2f} → กำไรน้อยกว่าขาดทุน")
+                if action != "HOLD" and risk_reward_ratio >= 0 and risk_reward_ratio < 3.0:
+                    print(f"    ❌ Risk-Reward Ratio {risk_reward_ratio:.2f} < 3.0 - แก้ไขเป็น HOLD")
+                    print(f"    📊 Profit: {profit_potential:.2f}, Loss: {loss_risk:.2f} → ต้องการ Risk-Reward ≥ 3.0")
                     action = "HOLD"
                     confidence = 0
                 
